@@ -1,0 +1,101 @@
+# CLOUD AGENTS: runs the two Claude agents (stock + crypto), news scoring, stop-losses and
+# your iPhone commands on GitHub's servers, every 30 minutes. No computer needs to be on.
+#
+# Secrets (Settings > Secrets and variables > Actions > Secrets):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY   your Alpaca PAPER keys
+#   CLAUDE_CODE_OAUTH_TOKEN             from `claude setup-token` on your Mac (uses your Claude plan, no API key)
+#   NTFY_TOPIC, CONTROL_TOPIC           phone alerts and phone commands (optional but recommended)
+#
+# Moving to the home server later: set the repository variable RUNNER=server (or mac).
+# This schedule then stops so the agents never run twice; the manual button still works.
+# OFF for now (options only). Turn the schedule on with the repository variable STOCKS_CRYPTO=on.
+name: agents
+
+on:
+  schedule:
+    - cron: "5,35 13-21 * * 1-5"   # every 30 min around US market hours (both summer and winter time)
+    - cron: "5 0-12/2,22 * * *"    # every 2 h the rest of the time, for crypto, stops and phone commands
+    - cron: "5 13-21/2 * * 0,6"    # every 2 h on weekend days (crypto trades 24/7)
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        required: true
+        default: tick
+        type: choice
+        options: [tick, stock, crypto, status]
+
+concurrency:
+  group: agents            # one run at a time, so the saved memory is never overwritten
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch' || (vars.STOCKS_CRYPTO == 'on' && vars.RUNNER != 'mac' && vars.RUNNER != 'server')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      CONTROL_TOPIC: ${{ secrets.CONTROL_TOPIC }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
+      I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
+      KILL_SWITCH: ${{ vars.KILL_SWITCH || 'false' }}
+      NET_DEPOSITS_OVERRIDE: ${{ vars.NET_DEPOSITS_OVERRIDE }}
+      MAX_LOSS_PCT: ${{ vars.MAX_LOSS_PCT }}
+      AGENTS_ENABLED: ${{ vars.AGENTS_ENABLED || 'true' }}
+      AGENT_STOCK_PCT: ${{ vars.AGENT_STOCK_PCT }}
+      AGENT_CRYPTO_PCT: ${{ vars.AGENT_CRYPTO_PCT }}
+      CLAUDE_BACKEND: pro
+      CLAUDE_CODE_MODEL: ${{ vars.CLAUDE_CODE_MODEL }}
+      CLAUDE_CALLS_PER_HOUR: ${{ vars.CLAUDE_CALLS_PER_HOUR || '20' }}
+      NEWS_POLL_MIN: "30"
+      LOCAL_LLM_ENABLED: "false"     # no local AI in the cloud; the home server turns it on
+      DATASTORE_ENABLED: "false"
+      OPTIONS_RECORDER: "false"
+      DAILY_SUMMARY: ${{ vars.DAILY_SUMMARY || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt
+      - run: npm install -g @anthropic-ai/claude-code
+
+      # The agents' memory (journal, positions they own, timers, queued news) lives in logs/state.db.
+      # Restore the newest copy, run, then save a new copy.
+      - name: Restore agent memory
+        uses: actions/cache/restore@v4
+        with:
+          path: logs/state.db
+          key: agent-state-${{ github.run_id }}
+          restore-keys: agent-state-
+
+      - name: Agents tick
+        if: github.event_name == 'schedule' || inputs.action == 'tick'
+        run: python daemon.py --once
+      - name: Run one agent now
+        if: github.event_name == 'workflow_dispatch' && (inputs.action == 'stock' || inputs.action == 'crypto')
+        run: python agent.py ${{ inputs.action }} "you asked from GitHub"
+      - name: Status to phone
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'status'
+        run: python -c "import daemon, broker; r = daemon.Runner(once=True); print(r.status_text()); broker.notify(r.status_text(), 'Status', 'low')"
+
+      - name: Save agent memory
+        if: always() && hashFiles('logs/state.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: logs/state.db
+          key: agent-state-${{ github.run_id }}
+
+      - name: Tell my phone if anything failed
+        if: failure() && env.NTFY_TOPIC != ''
+        run: |
+          curl -s -H "Title: Agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > agents to see the log." "https://ntfy.sh/$NTFY_TOPIC"

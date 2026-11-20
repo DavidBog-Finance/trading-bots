@@ -1,0 +1,10 @@
+.env
+__pycache__/
+.venv/
+logs/*.csv
+*.pyc
+logs/*.db
+logs/*.log
+linux/services.env
+linux/docker-compose.override.yml
+data/

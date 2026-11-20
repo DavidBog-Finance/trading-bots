@@ -1,0 +1,114 @@
+<title>SER9 Pro Setup Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a load meter up top, then tiers as sections with job tables */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --rule:#d9ddda;
+  --accent:#1f6f5c; --accent-soft:#e2efe9; --track:#e6e9e7;
+  --good:#1f7a4a; --warn:#a86a00; --bad:#b3362c;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+.wrap{max-width:880px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2,h3{font-family:var(--display);line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,6vw,2.9rem)} h2{font-size:1.65rem} h3{font-size:1.2rem}
+p{margin:0;max-width:70ch}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header,section{display:grid;gap:14px}
+.lede{color:var(--muted);font-size:1.08rem}
+.verdict{background:var(--accent-soft);border-left:4px solid var(--accent);padding:20px 22px;display:grid;gap:10px;border-radius:2px}
+.verdict ol{margin:0}
+.meters{display:grid;gap:12px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:18px}
+.meter{display:grid;grid-template-columns:150px 1fr 120px;gap:12px;align-items:center;font-size:.92rem}
+.bar{height:10px;background:var(--track);border-radius:99px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:99px}
+.meter .num{text-align:right}
+@media (max-width:560px){.meter{grid-template-columns:1fr;gap:4px}.meter .num{text-align:left}}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:.93rem}
+th,td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+tr:last-child td{border-bottom:0}
+thead th{font:600 .76rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+td:first-child{font-weight:600;width:22%}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 .72rem var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}
+ol,ul{margin:0;padding-left:1.3em;display:grid;gap:8px;max-width:74ch}
+code{font:.88em var(--mono);background:var(--surface);border:1px solid var(--rule);padding:0 4px;border-radius:3px}
+.note{border:1px solid var(--rule);background:var(--surface);padding:16px 18px;border-radius:4px;display:grid;gap:8px}
+.small{font-size:.85rem;color:var(--muted)}
+.flow{display:grid;gap:10px;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--accent);padding:12px 16px;border-radius:3px;display:grid;gap:4px}
+.step b{font-family:var(--display);font-size:1.08rem}
+.cut td:first-child{width:30%}
+</style>
+<div class="wrap">
+<header>
+  <p class="eyebrow">Beelink SER9 Pro · 32 GB · main server · November 2026</p>
+  <h1>SER9 Pro Setup Plan</h1>
+  <p class="lede">The SER9 Pro takes over everything the Aero plan described: the trading bots, the Claude agents, local AI and the home apps. The Aero goes on the side. Your Mac and iPhone are how you watch it, prompt it and use it.</p>
+</header>
+
+<div class="verdict">
+  <p><b>Nothing about how the trading works changes.</b> It's the same code, the same safety rails and the same paper-first rule. Only the box it runs on changes.</p>
+  <ol>
+    <li><b>Bots and agents</b> run 24/7 on the SER9 as a service that starts by itself after a reboot or power cut.</li>
+    <li><b>Claude Code</b> is installed on the SER9 and logged in to your Pro plan once. The agents use it in the background with no API key.</li>
+    <li><b>Local AI and Claude work hand in hand</b>, the same as before. The local model reads every headline and Claude gets what matters, paced through the hour. Local AI never trades.</li>
+    <li><b>The Mac stops running bots.</b> It becomes a normal laptop again, and it backs up to the SER9 with Time Machine.</li>
+  </ol>
+</div>
+
+<section>
+  <h2>What changes from the Aero plan</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Area</th><th>Aero</th><th>SER9 Pro</th></tr></thead>
+    <tbody>
+      <tr><td>Local AI</td><td>NVIDIA GTX 1060, 6 GB</td><td>Built-in Radeon graphics sharing the 32 GB. It's slower per word than a gaming GPU, but it fits bigger models (14B). Screening headlines only needs short answers, so the speed is plenty. If the graphics path fails, it runs on the CPU automatically.</td></tr>
+      <tr><td>Setup script</td><td>NVIDIA driver and an 80 W power cap</td><td>Newer Linux kernel for the Ryzen AI chip and graphics access for Ollama. The script detects which machine it's on, so one download covers both.</td></tr>
+      <tr><td>Noise and power</td><td>Laptop fans, about 60 to 150 W</td><td>Small and quiet, about 10 to 60 W. That suits bedroom mode better.</td></tr>
+      <tr><td>Hardware prep</td><td>Battery check, fans, new paste</td><td>None. Plug in Ethernet and set "Power on after AC loss" in the BIOS.</td></tr>
+      <tr><td>Address</td><td>http://aero:…</td><td>http://ser9:… (name the computer <code>ser9</code> when installing)</td></tr>
+      <tr><td>Everything else</td><td colspan="2">Same: Tailscale, AdGuard, n8n, Miniflux, Stirling-PDF, Uptime Kuma, Dockge, Time Machine, health alerts, scorecard, data store, bedroom mode.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>How you'll use it from your Mac and iPhone</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>You want to</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td>Know when trades fill or something breaks</td><td>ntfy alerts on your iPhone, as now. Send <code>status</code>, <code>pause</code> or <code>kill</code> to your control topic.</td></tr>
+      <tr><td>Chat with the local AI</td><td>Open WebUI at <code>http://ser9:3001</code>. Add it to your iPhone home screen.</td></tr>
+      <tr><td>Ask Claude Code to change or check the bots</td><td>From the Mac: <code>ssh you@ser9</code>, then <code>cd ~/trading-bots &amp;&amp; claude</code>. From the iPhone: the Termius app, or start <code>claude remote-control</code> on the SER9 and drive it from the Claude app.</td></tr>
+      <tr><td>See if everything is up</td><td>Uptime Kuma at <code>http://ser9:3002</code>. The containers are at <code>http://ser9:5001</code>.</td></tr>
+      <tr><td>Check trades and positions</td><td>The Alpaca app, as now.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">Keep Tailscale switched on on the Mac and iPhone. The pages only open over Tailscale, so nothing is exposed to the internet.</p>
+</section>
+
+<section>
+  <h2>Setup order</h2>
+  <div class="flow">
+    <div class="step"><b>1. Plug in and set the BIOS</b><span>Ethernet to the router. Press Delete at power-on and set "Power on after AC loss" to On.</span></div>
+    <div class="step"><b>2. Install Ubuntu Server 24.04</b><span>From a USB stick made on your Mac (balenaEtcher). This erases Windows. Name the computer <code>ser9</code> and tick "Install OpenSSH server". Then copy the trading-bots folder over from the v4 download.</span></div>
+    <div class="step"><b>3. Run the server script</b><span><code>sudo bash linux/server-setup.sh your-ntfy-topic</code> sets up the kernel and graphics, sleep, updates, Docker, Tailscale and the firewall. Restart afterwards with <code>sudo reboot</code>.</span></div>
+    <div class="step"><b>4. Log in to Claude Code</b><span><code>curl -fsSL https://claude.ai/install.sh | bash</code>, then <code>claude</code> and log in with your Pro account. Then <code>cp .env.example .env</code> and fill in your Alpaca paper keys and ntfy topics.</span></div>
+    <div class="step"><b>5. Run the installer</b><span><code>bash linux/install.sh</code> runs the tests, starts the bots as a service, and starts the web apps. The first run asks you to set passwords in <code>linux/services.env</code>, then you run it again.</span></div>
+    <div class="step"><b>6. Switch the Mac off bot duty</b><span>On the Mac: <code>bash mac/uninstall.sh</code>. Then point Time Machine at the SER9, and your router's DNS at the SER9 for ad blocking.</span></div>
+    <div class="step"><b>7. Paper trade for at least a month</b><span>Watch the Friday scorecard before you think about real money.</span></div>
+  </div>
+  <p class="small">Full steps and every page address are in <code>linux/README.md</code> in the v4 download. The Aero can still run the same scripts later if you want it back.</p>
+</section>
+</div>

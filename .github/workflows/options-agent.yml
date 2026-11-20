@@ -1,0 +1,118 @@
+# PORTFOLIO 1K OPTIONS AGENT on GitHub's servers (free on a public repo).
+# Each market day one long run starts around the open and checks every 15 seconds until 4:20 pm
+# New York. GitHub jobs max out at 6 hours, so an hourly trigger starts a second run that picks
+# up where the first stopped (memory is carried in the Actions cache). Between runs, the stop
+# order resting at Alpaca protects any open trade.
+#
+# Secrets (Settings > Secrets and variables > Actions > Secrets):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY   Alpaca PAPER keys
+#   CLAUDE_CODE_OAUTH_TOKEN             from `claude setup-token` on your Mac (your Claude plan, no API key)
+#   NTFY_TOPIC, CONTROL_TOPIC           phone alerts and phone commands
+# Variables: NET_DEPOSITS_OVERRIDE (your paper balance, e.g. 1000). Optional P1K_* overrides (portfolio1k/settings.py).
+#
+# PUBLIC REPO NOTE: run logs are public. Keys never appear in them (GitHub masks secrets), but trades,
+# balances and Claude's reasons do. Fine for paper; switch the repo to private or move to your own
+# computer before real money.
+#
+# Moving to your own always-on computer: set the repository variable RUNNER=box. This schedule then
+# stops so nothing trades twice; the buttons below still work as a backup.
+name: options-agent
+
+on:
+  schedule:
+    - cron: "5 13-20 * * 1-5"   # hourly, 13:05-20:05 UTC = covers 9:00-16:20 New York in summer and winter
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        required: true
+        default: status
+        type: choice
+        options: [status, scorecard, run-now, close-trade, kill, export-memory]
+
+concurrency:
+  group: options-agent      # one run at a time; a queued run starts when the current one ends
+  cancel-in-progress: false
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch' || vars.RUNNER != 'box'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      CONTROL_TOPIC: ${{ secrets.CONTROL_TOPIC }}
+      ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
+      I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
+      NET_DEPOSITS_OVERRIDE: ${{ vars.NET_DEPOSITS_OVERRIDE }}
+      CLAUDE_BACKEND: pro
+      CLAUDE_CODE_MODEL: ${{ vars.CLAUDE_CODE_MODEL }}
+      CLAUDE_CALLS_PER_HOUR: ${{ vars.CLAUDE_CALLS_PER_HOUR || '20' }}
+      LOCAL_LLM_ENABLED: "false"
+      P1K_FULL_PORT: ${{ vars.P1K_FULL_PORT }}
+      P1K_WATCHLIST: ${{ vars.P1K_WATCHLIST }}
+      P1K_FOMC_DAYS: ${{ vars.P1K_FOMC_DAYS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: python -m pytest -q tests          # never trade on broken code
+
+      - name: Restore memory
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            logs/portfolio1k.db
+            logs/state.db
+          key: p1k-state-${{ github.run_id }}
+          restore-keys: p1k-state-
+
+      - name: Trade the session
+        if: github.event_name == 'schedule' || inputs.action == 'run-now'
+        run: python -m portfolio1k run --max-minutes 340
+      - name: Status to phone
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'status'
+        run: python -m portfolio1k status
+      - name: Scorecard
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'scorecard'
+        run: python -m portfolio1k scorecard
+      - name: Close the open trade
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'close-trade'
+        run: python -c "from portfolio1k import runner; r = runner.Runner(); r.handle('close')"
+      - name: Kill (sell everything and stop)
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'kill'
+        run: python -m portfolio1k kill
+
+      - name: Export memory (for moving to your own computer; kept 3 days)
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'export-memory'
+        uses: actions/upload-artifact@v4
+        with:
+          name: portfolio1k-memory
+          path: |
+            logs/portfolio1k.db
+            logs/state.db
+          retention-days: 3
+
+      - name: Save memory
+        if: always() && hashFiles('logs/portfolio1k.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            logs/portfolio1k.db
+            logs/state.db
+          key: p1k-state-${{ github.run_id }}
+
+      - name: Tell my phone if anything failed
+        if: failure() && env.NTFY_TOPIC != ''
+        run: |
+          curl -s -H "Title: Options agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > options-agent to see the log. The stop at Alpaca still protects any open trade." "https://ntfy.sh/$NTFY_TOPIC"

@@ -1,0 +1,7 @@
+# GPU add-on for the Aero (NVIDIA GTX 1060). install.sh copies this to docker-compose.override.yml.
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]

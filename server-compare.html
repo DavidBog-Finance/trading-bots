@@ -1,0 +1,114 @@
+<title>Aero 14 vs M3 MacBook Pro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, a verdict block, then spec sheet and job scorecard as two-column tables */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --rule:#d9ddda;
+  --accent:#1f6f5c; --accent-soft:#e2efe9;
+  --good:#1f7a4a; --warn:#a86a00; --bad:#b3362c;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+.wrap{max-width:860px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:36px}
+h1,h2{font-family:var(--display);line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,6vw,2.9rem)}
+h2{font-size:1.6rem}
+p{margin:0;max-width:68ch}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header{display:grid;gap:10px}
+.lede{color:var(--muted);font-size:1.08rem}
+.verdict{background:var(--accent-soft);border-left:4px solid var(--accent);padding:20px 22px;display:grid;gap:10px;border-radius:2px}
+.verdict b{color:var(--accent)}
+section{display:grid;gap:14px}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.94rem}
+th,td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+tr:last-child td{border-bottom:0}
+thead th{font:600 .78rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+td:first-child{font-weight:600;width:24%}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 .72rem var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:99px;border:1px solid currentColor;margin-right:6px;white-space:nowrap}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}
+ol,ul{margin:0;padding-left:1.3em;display:grid;gap:8px;max-width:72ch}
+code{font:.88em var(--mono);background:var(--surface);border:1px solid var(--rule);padding:0 4px;border-radius:3px}
+.small{font-size:.85rem;color:var(--muted)}
+.sources{font-size:.85rem;color:var(--muted)}
+.sources a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Always-on machine for the trading bots and agents · October 2026</p>
+  <h1>Gigabyte Aero 14 vs M3 MacBook Pro</h1>
+  <p class="lede">Which laptop should stay at home, plugged in, running the bots, the news watcher and the Claude agents around the clock?</p>
+</header>
+
+<div class="verdict">
+  <p><b>Use the Aero 14 as the bot server.</b> The job is tiny: a Python program that wakes every 30 seconds, makes a few web requests and calls Claude Code. Either laptop is far more than enough. What decides it is that the Aero already sits in one spot doing nothing, while your MacBook goes where you go. Moving the bots off the Mac means closing its lid or taking it out never stops the trading.</p>
+  <p><b>Two conditions:</b> install Ubuntu Linux on the Aero instead of running Windows 10, and deal with its roughly nine-year-old battery before leaving it on the charger 24/7 (details below).</p>
+</div>
+
+<section>
+  <h2>Spec sheet</h2>
+  <div class="tbl"><table>
+    <thead><tr><th></th><th>Gigabyte Aero 14 (2016–17)</th><th>MacBook Pro M3 (2023)</th></tr></thead>
+    <tbody>
+      <tr><td>Processor</td><td>Intel Core i7-6700HQ or i7-7700HQ, 4 cores / 8 threads, 14 nm</td><td>Apple M3, 8 cores (4 performance + 4 efficiency), 3 nm</td></tr>
+      <tr><td>Graphics</td><td>NVIDIA GTX 1060 6 GB (unused by the bots)</td><td>Apple 10-core GPU (unused by the bots)</td></tr>
+      <tr><td>Memory</td><td class="num">64 GB DDR4 (Gigabyte lists 32 GB as the official max; 2×32 GB generally works)</td><td class="num">8–24 GB unified</td></tr>
+      <tr><td>Storage</td><td>Samsung 970 EVO 1 TB NVMe (a later upgrade: that drive came out in 2018)</td><td>512 GB–2 TB SSD</td></tr>
+      <tr><td>Battery</td><td class="num">94 Wh, about 8–9 years old</td><td class="num">70 Wh, about 3 years old, with charge limiting</td></tr>
+      <tr><td>Power when idle (estimate)</td><td class="num">≈ 10–20 W</td><td class="num">≈ 3–6 W</td></tr>
+      <tr><td>Wired network</td><td>No Ethernet port (USB-to-Ethernet adapter, ~$15)</td><td>No Ethernet port (USB-C adapter)</td></tr>
+      <tr><td>Operating system</td><td>Windows 10 (Windows 11 doesn't officially support 6th/7th-gen Intel). Ubuntu 24.04 LTS runs fine</td><td>macOS, current and supported</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">The bots use well under 1 GB of memory and a few percent of one CPU core. The Aero's 64 GB and GTX 1060 don't help with this job; they just mean it will never be the bottleneck.</p>
+</section>
+
+<section>
+  <h2>For this job specifically</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>What matters</th><th>Aero 14</th><th>M3 MacBook Pro</th></tr></thead>
+    <tbody>
+      <tr><td>Enough power to run everything</td><td><span class="pill g">Plenty</span></td><td><span class="pill g">Plenty</span></td></tr>
+      <tr><td>Stays in one place, always on</td><td><span class="pill g">Yes</span>It already lives there and nobody uses it</td><td><span class="pill b">Conflicts</span>Taking it out or closing the lid puts it to sleep, and the bots stop</td></tr>
+      <tr><td>Your own use of the machine</td><td><span class="pill g">Unaffected</span></td><td><span class="pill w">Shared</span>Battery, fans and network are shared with whatever you're doing</td></tr>
+      <tr><td>Staying awake 24/7</td><td><span class="pill g">Easy on Linux</span>Ignore the lid switch and turn sleep off; no display needed</td><td><span class="pill w">Fiddly</span>Must stay open on the charger; sleeps with the lid closed unless an external display is attached</td></tr>
+      <tr><td>Security updates</td><td><span class="pill g">On Ubuntu</span>Supported to 2029 (2034 with free Ubuntu Pro)<br><span class="pill w">On Windows 10</span>Only through the paid or rewards-based extended program, until Oct 2027</td><td><span class="pill g">Current</span></td></tr>
+      <tr><td>Battery safety on the charger 24/7</td><td><span class="pill b">Check first</span>An old lithium battery held at 100% can swell</td><td><span class="pill g">Fine</span>macOS holds it around 80%</td></tr>
+      <tr><td>Electricity (LA, ~$0.30/kWh)</td><td class="num"><span class="pill w">~$25–50/yr</span></td><td class="num"><span class="pill g">~$8–15/yr</span></td></tr>
+      <tr><td>Noise and heat</td><td><span class="pill w">Watch it</span>Gaming fans may spin up; 8–9 years of dust and dried thermal paste</td><td><span class="pill g">Silent</span></td></tr>
+      <tr><td>Claude Code on your Pro plan</td><td><span class="pill g">Supported</span>Native on Linux; log in once</td><td><span class="pill g">Supported</span></td></tr>
+      <tr><td>Bot code as built today</td><td><span class="pill w">Small change</span>The installer is Mac-only (launchd); Linux needs a systemd version, about 30 lines</td><td><span class="pill g">Ready</span><code>bash mac/install.sh</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Before the Aero runs 24/7</h2>
+  <ol>
+    <li><b>Check the battery.</b> Look at the laptop on a flat table. If the case bulges, the trackpad has lifted, or it rocks, the battery is swelling. Stop charging it and replace or remove it. A healthy one is still at 100% charge all day; if Gigabyte Control Center offers a charge limit on your model, set it to 60–80%. Otherwise, the safest setup is to unplug the internal battery and run on the 150 W adapter alone. The trade-off is that a power cut shuts it down. It reboots on its own if the BIOS has a "power on after AC loss" option, and the bots pick up where they left off.</li>
+    <li><b>Clean it.</b> Blow the dust out of the fans. New thermal paste is optional, since the bots barely load the CPU.</li>
+    <li><b>Install Ubuntu 24.04 LTS</b> from a USB stick (you'll need about 8 GB). This wipes Windows, so copy off anything you want first. Linux is the standard home for always-on servers: it doesn't nag about updates, doesn't restart on its own, and needs no screen or login to keep running.</li>
+    <li><b>Make it headless.</b> Set the lid switch to "ignore" and turn off suspend. Install Tailscale (free), which lets your MacBook and iPhone reach it from anywhere over SSH. Use Ethernet through a USB adapter if your router is nearby, since it's steadier than Wi-Fi.</li>
+    <li><b>Install the bots.</b> Install Claude Code, run <code>claude</code> and log in with your Pro account, copy over the repo and <code>.env</code>, then run the Linux installer. I can add a <code>linux/install.sh</code> that sets up a systemd service with auto-restart, just like the Mac version.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>If you'd rather keep the MacBook</h2>
+  <p>It works as built: plugged in, lid open, never taken out. The catch is that every time you take it with you, the agents, the news watcher and the stop-losses pause until it's back home. Alpaca keeps your positions safe either way, and the rules bots catch up the next day. Choose this only if the Aero's battery is swollen and you don't want to deal with it.</p>
+</section>
+
+<p class="sources">Sources: <a href="https://www.gigabyte.com/us/Laptop/AERO-14--i7-7700HQ/sp" target="_blank" rel="noopener">Gigabyte Aero 14 (i7-7700HQ) specifications</a> · <a href="https://www.helpnetsecurity.com/2026/06/26/microsoft-windows-10-free-security-updates-esu-program/" target="_blank" rel="noopener">Windows 10 consumer security updates extended to Oct 12, 2027</a> · <a href="https://www.notebookcheck.net/M1-Pro-vs-M3_13845_15110.247596.0.html" target="_blank" rel="noopener">Notebookcheck M3 power figures</a>. Idle power and electricity figures are estimates; the Aero's depend on its model and settings.</p>
+</div>

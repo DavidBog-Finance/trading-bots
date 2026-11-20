@@ -1,0 +1,9 @@
+# GPU add-on for the SER9 Pro (AMD Radeon built into the Ryzen chip). install.sh copies this to
+# docker-compose.override.yml. Ollama uses the Radeon through Vulkan; if that ever fails it quietly
+# runs on the CPU instead, which is still fast enough for headline screening.
+services:
+  ollama:
+    devices: ["/dev/dri:/dev/dri"]
+    group_add: ["${VIDEO_GID:-44}", "${RENDER_GID:-992}"]
+    environment:
+      - OLLAMA_VULKAN=1

@@ -1,0 +1,187 @@
+<title>Home Server Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a load meter up top, then tiers as sections with job tables */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --rule:#d9ddda;
+  --accent:#1f6f5c; --accent-soft:#e2efe9; --track:#e6e9e7;
+  --good:#1f7a4a; --warn:#a86a00; --bad:#b3362c;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+.wrap{max-width:880px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2,h3{font-family:var(--display);line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,6vw,2.9rem)} h2{font-size:1.65rem} h3{font-size:1.2rem}
+p{margin:0;max-width:70ch}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header,section{display:grid;gap:14px}
+.lede{color:var(--muted);font-size:1.08rem}
+.verdict{background:var(--accent-soft);border-left:4px solid var(--accent);padding:20px 22px;display:grid;gap:10px;border-radius:2px}
+.verdict ol{margin:0}
+.meters{display:grid;gap:12px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:18px}
+.meter{display:grid;grid-template-columns:150px 1fr 120px;gap:12px;align-items:center;font-size:.92rem}
+.bar{height:10px;background:var(--track);border-radius:99px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:99px}
+.meter .num{text-align:right}
+@media (max-width:560px){.meter{grid-template-columns:1fr;gap:4px}.meter .num{text-align:left}}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:.93rem}
+th,td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+tr:last-child td{border-bottom:0}
+thead th{font:600 .76rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+td:first-child{font-weight:600;width:22%}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 .72rem var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}
+ol,ul{margin:0;padding-left:1.3em;display:grid;gap:8px;max-width:74ch}
+code{font:.88em var(--mono);background:var(--surface);border:1px solid var(--rule);padding:0 4px;border-radius:3px}
+.note{border:1px solid var(--rule);background:var(--surface);padding:16px 18px;border-radius:4px;display:grid;gap:8px}
+.small{font-size:.85rem;color:var(--muted)}
+.sources a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Gigabyte Aero 14 + M3 MacBook Pro · October 2026</p>
+  <h1>Home Server Plan</h1>
+  <p class="lede">The trading bots use a tiny slice of the Aero. Here's what else the two machines can do, ordered by how much it's worth to you, keeping both cool and quiet.</p>
+</header>
+
+<div class="verdict">
+  <p><b>The short version.</b> Turn the Aero into a quiet home server on Ubuntu, reachable from your iPhone and Mac through Tailscale. Put its spare capacity to work in this order:</p>
+  <ol>
+    <li><b>Make the trading smarter:</b> a local market-data store, a scorecard that checks whether Claude's news scores and the agents actually make money, and extra strategies tested on paper.</li>
+    <li><b>Run local AI</b> as a backup brain and a filter, not as the decision-maker. The GTX 1060 runs small models well, and the 64 GB of RAM can hold a mid-size one.</li>
+    <li><b>Useful home services:</b> phone photo backup, Mac backups, ad blocking for the house, a media server and game streaming.</li>
+  </ol>
+  <p>Skip crypto mining: it loses money on LA electricity.</p>
+</div>
+
+<section>
+  <h2>How much headroom there is</h2>
+  <div class="meters" role="img" aria-label="Estimated share of the Aero used by the trading bots">
+    <div class="meter"><span>CPU (4 cores)</span><div class="bar"><i style="width:3%"></i></div><span class="num">~2–5% avg</span></div>
+    <div class="meter"><span>Memory (64 GB)</span><div class="bar"><i style="width:2%"></i></div><span class="num">~1 GB</span></div>
+    <div class="meter"><span>Disk (1 TB)</span><div class="bar"><i style="width:2%"></i></div><span class="num">~5–20 GB</span></div>
+    <div class="meter"><span>GPU (GTX 1060)</span><div class="bar"><i style="width:0%"></i></div><span class="num">unused</span></div>
+  </div>
+  <p class="small">Estimates for the bots, news watcher and agents. Claude itself runs in Anthropic's cloud, so your laptop only sends text and waits.</p>
+</section>
+
+<section>
+  <h2>Tier 1 · Make the trading smarter</h2>
+  <p>These matter most, because the agents can't be backtested. The only way to know if they're any good is to measure them, and measuring needs storage and spare compute, which the Aero has plenty of.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Project</th><th>What it does for you</th><th>Load</th></tr></thead>
+    <tbody>
+      <tr><td>Local market-data store</td><td>Keeps daily (and optionally minute) price history for every liquid stock and coin in a local database (DuckDB/Parquet) on the 1 TB SSD. The scanner stops re-downloading 1,000+ symbols every day, runs faster, and Alpaca's rate limits stop mattering.</td><td><span class="pill g">Light</span> ~20–60 GB</td></tr>
+      <tr><td>News and agent scorecard</td><td>Every headline Claude scores is already saved. A nightly job checks what each stock actually did over the next 1, 3 and 5 days. That shows whether the news scores predict anything, and whether each agent beats simple baselines: the momentum list alone, and just holding SPY or BTC. A weekly push tells you.</td><td><span class="pill g">Light</span> nightly</td></tr>
+      <tr><td>Shadow strategies</td><td>Run variants side by side on paper without touching your real money, for example a cautious agent against an aggressive one, or Claude against a local model. Alpaca supports multiple paper accounts, so each variant gets its own.</td><td><span class="pill g">Light</span></td></tr>
+      <tr><td>Overnight research</td><td>Walk-forward and Monte Carlo tests across the whole stock universe, run during your workday, since the Aero shares your bedroom. With 64 GB of RAM, years of data across thousands of symbols fit in memory.</td><td><span class="pill w">Medium</span> bursts</td></tr>
+      <tr><td>Bot dashboard</td><td>A private web page (Uptime Kuma plus a small Grafana or Streamlit board) showing positions, agent journals, Claude usage and server health. It opens on your iPhone through Tailscale.</td><td><span class="pill g">Light</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Tier 2 · Local AI</h2>
+  <p>You can run open models at home with <b>Ollama</b> (simple, with an API like Claude's) and <b>Open WebUI</b> (a ChatGPT-style page you can open on your phone). It's free to run and private, but small local models are much weaker than Claude. Use them where "good enough and always available" is what counts.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Machine</th><th>What fits</th><th>Speed (estimate)</th><th>Good for</th></tr></thead>
+    <tbody>
+      <tr><td>Aero: GTX 1060 6 GB</td><td>3–8B models at 4-bit (Phi-4 Mini, Granite and Gemma-class small models, Llama 3.1 8B)</td><td class="num">~20–28 words/s for 7–8B</td><td>Fast triage, tagging, summaries, short chats</td></tr>
+      <tr><td>Aero: 64 GB RAM, CPU</td><td>Mid-size "mixture of experts" models around 30B total (only ~3B active per word), ~18–20 GB at 4-bit</td><td class="num">~5–10 words/s</td><td>Smarter overnight jobs where speed doesn't matter</td></tr>
+      <tr><td>Aero: 70B dense models</td><td>Fits in RAM, but…</td><td class="num">&lt;1 word/s</td><td><span class="pill b">Not practical</span></td></tr>
+      <tr><td>M3 MacBook Pro</td><td>8 GB: up to ~8B · 16 GB: up to ~14B · 24 GB: up to ~20–30B, at 4-bit (LM Studio or Ollama, Apple MLX)</td><td class="num">~20–35 words/s for 7–8B</td><td>Faster than the Aero for small models; use it while you're at the Mac</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Where it helps the bots</h3>
+  <ul>
+    <li><b>Backup when you hit your Pro limit.</b> Today the news watcher and agents pause for an hour when the limit is reached. A local model can keep scoring headlines in the meantime, so nothing material slips by. Trades stay with Claude.</li>
+    <li><b>Pre-filter the news.</b> A local model drops the noise (stock lists, recycled stories, "3 stocks to watch") before anything goes to Claude. Your Pro usage then goes to headlines that matter and to the agents' thinking.</li>
+    <li><b>Duplicate detection.</b> A small embedding model spots the same story from five sources, so it's scored once.</li>
+    <li><b>Second opinion, measured.</b> Run a local-model agent as a shadow strategy on paper and let the scorecard decide whether it's any good.</li>
+  </ul>
+  <h3>Everyday uses</h3>
+  <ul>
+    <li>A private chat assistant on your iPhone through Open WebUI and Tailscale, for anything you don't want to leave the house.</li>
+    <li>Voice memos to text with Whisper, which runs well on the GTX 1060.</li>
+    <li>Searching your own documents and notes with a local index.</li>
+  </ul>
+  <div class="note">
+    <p><b>GTX 1060 specifics.</b> Use NVIDIA's 580 driver branch, the last one that supports Pascal cards, with security fixes promised through Oct 2028. Use CUDA 12-based builds, since CUDA 13 dropped Pascal. Ollama still lists the card as supported. Keep it at a 75–80 W power limit (<code>nvidia-smi -pl 80</code>): you lose almost no AI speed, and it runs cooler and quieter.</p>
+    <p><b>Rule that stays:</b> local models never place trades. They score, filter and summarize; Claude and the code's risk limits decide.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Tier 3 · Home services</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Service</th><th>What you get</th><th>Load</th><th>Worth it?</th></tr></thead>
+    <tbody>
+      <tr><td>Immich (photo backup)</td><td>Google Photos-style backup and search for your iPhone. Can replace a paid iCloud tier (200 GB is $2.99/mo, 2 TB $9.99/mo). Keep a second copy somewhere, though, because one laptop isn't a backup.</td><td><span class="pill w">Medium</span> during import</td><td><span class="pill g">High</span></td></tr>
+      <tr><td>Time Machine target</td><td>Your MacBook backs itself up to the Aero over Wi-Fi automatically (Samba share).</td><td><span class="pill g">Light</span></td><td><span class="pill g">High</span></td></tr>
+      <tr><td>AdGuard Home or Pi-hole</td><td>Blocks ads and trackers for every device on your home Wi-Fi, phones included.</td><td><span class="pill g">Tiny</span></td><td><span class="pill g">High</span></td></tr>
+      <tr><td>Tailscale</td><td>Secure access to all of this from anywhere, without opening ports on your router. Needed for everything else.</td><td><span class="pill g">Tiny</span></td><td><span class="pill g">Essential</span></td></tr>
+      <tr><td>Sunshine + Moonlight</td><td>Stream PC games from the Aero to your iPhone or Mac. The GTX 1060 handles 1080p well.</td><td><span class="pill w">Medium</span> while playing</td><td><span class="pill w">If you game</span></td></tr>
+      <tr><td>Jellyfin</td><td>Your own Netflix for movies and shows you own, with GPU transcoding.</td><td><span class="pill g">Light</span></td><td><span class="pill w">If you have media</span></td></tr>
+      <tr><td>Syncthing / Nextcloud</td><td>Private file sync between your Mac and phone.</td><td><span class="pill g">Light</span></td><td><span class="pill w">Optional</span></td></tr>
+      <tr><td>Home Assistant</td><td>One app for smart-home devices and automations.</td><td><span class="pill g">Light</span></td><td><span class="pill w">If you have smart devices</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">Run each one in Docker, so it's isolated and easy to remove. Everything here combined still leaves the Aero mostly idle.</p>
+</section>
+
+<section>
+  <h2>Skip these</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Idea</th><th>Why not</th></tr></thead>
+    <tbody>
+      <tr><td>Crypto mining on the GTX 1060</td><td>It earns pennies a day. Running the card around the clock draws roughly 2–2.5 kWh, about $0.60–0.75 a day at LA rates, so you lose money and wear out the card.</td></tr>
+      <tr><td>Folding@home / BOINC at full load</td><td>Worthy, but it pins the CPU and GPU at 100% around the clock. That's the opposite of not pushing it.</td></tr>
+      <tr><td>Opening ports to the internet</td><td>An old laptop that holds your trading keys shouldn't be reachable from the internet. Use Tailscale only.</td></tr>
+      <tr><td>Local models making trades</td><td>Too weak for that, and it would undo the safety design. Keep them as helpers.</td></tr>
+      <tr><td>Running the bots on Windows 10</td><td>Updates run out in Oct 2027 even with the extension, and Windows can restart itself. Use Ubuntu.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Keeping it gentle</h2>
+  <ul>
+    <li><b>Cap the GPU</b> at 75–80 W, and leave the CPU on the <code>powersave</code> governor. Heavy jobs then just take a bit longer.</li>
+    <li><b>Schedule heavy work for 9 am–5 pm</b> (research, model jobs) while you're at work. The Aero shares your bedroom, so nights stay silent with only the bots running.</li>
+    <li><b>Watch temperatures.</b> A small script pushes to ntfy if the CPU stays above 85 °C or the GPU above 80 °C. Clean the fans first; nine years of dust is the most likely cause of heat.</li>
+    <li><b>Protect the data.</b> Check the SSD's health monthly (the 970 EVO 1 TB is rated for 600 TB written, far beyond this workload). Back up <code>.env</code> and the bots' memory file somewhere safe.</li>
+    <li><b>Power.</b> A small UPS ($60–90) rides out short blackouts, and the server comes back on its own after long ones. Deal with the old battery as covered in <a href="https://claude.ai/artifact/2SE3RLmWGazmbPVRK3GyDU" target="_blank" rel="noopener">Aero 14 vs M3 MacBook Pro</a>.</li>
+    <li><b>Electricity.</b> Bots plus home services: ~15–30 W average, about $40–80 a year. Add $10–30 a year for regular local-AI use.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>What the MacBook does</h2>
+  <p>It becomes your control center: Claude Code to change the bots, the dashboard and Open WebUI in a browser, and the faster machine for local models while you're at it. Nothing important depends on it being home, awake or charged.</p>
+</section>
+
+<section>
+  <h2>Suggested order</h2>
+  <ol>
+    <li><b>Week 1:</b> Ubuntu, Tailscale, the bots as a systemd service, temperature and uptime alerts, Time Machine target.</li>
+    <li><b>Week 2:</b> local market-data store and the news and agent scorecard.</li>
+    <li><b>Week 3:</b> Ollama on the GTX 1060 as a news pre-filter and a backup when you hit your Pro limit.</li>
+    <li><b>Any time after:</b> AdGuard Home, Immich, game streaming and the rest, one at a time.</li>
+  </ol>
+  <p>I can build the Week 1–3 pieces into the bot code: the Linux installer, the scorecard, the data store and the local-model backup.</p>
+</section>
+
+<p class="small sources">Sources: <a href="https://bestllmfor.com/guide/llm-gtx-1060/" target="_blank" rel="noopener">GTX 1060 local LLM guide (fit, ~28 tok/s llama.cpp benchmark, driver 580 / CUDA 12 notes)</a> · <a href="https://willitrunai.com/can-run/llama-3.1-8b-on-gtx-1060-6gb" target="_blank" rel="noopener">Llama 3.1 8B on GTX 1060 6GB</a> · <a href="https://www.gigabyte.com/us/Laptop/AERO-14--i7-7700HQ/sp" target="_blank" rel="noopener">Aero 14 specifications</a>. Speeds, power and electricity figures are estimates; the M3 depends on how much memory yours has.</p>
+</div>

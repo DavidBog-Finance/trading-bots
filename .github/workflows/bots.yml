@@ -1,0 +1,82 @@
+# Runs the bots for free on GitHub's servers. Keys go in
+# Settings > Secrets and variables > Actions (see the guide, "Automate it").
+#
+# From your iPhone: GitHub app > this repo > Actions > trading-bots > Run workflow,
+# then pick "summary" for a status push or "kill-all" to sell everything right now.
+#
+# Running the always-on home server (or Mac) instead? Set the repository variable RUNNER=server (or mac)
+# (Settings > Secrets and variables > Actions > Variables). The schedule then does
+# nothing, so trades never run twice, but the manual buttons still work as a backup.
+# OFF for now (options only). Turn the schedule on with the repository variable STOCKS_CRYPTO=on.
+name: trading-bots
+
+on:
+  schedule:
+    - cron: "20 19 * * 1-5"   # stock + options bots, 3:20 pm New York time in summer (EDT)
+    - cron: "20 20 * * 1-5"   # stock + options bots, 3:20 pm New York time in winter (EST)
+    - cron: "10 0 * * *"      # crypto bot, 00:10 UTC daily
+    - cron: "40 0 * * *"      # daily summary to your phone
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        required: true
+        default: summary
+        type: choice
+        options: [summary, stock, options, crypto, kill-all]
+
+concurrency: trading-bots   # never run two copies at once
+
+jobs:
+  run:
+    if: github.event_name == 'workflow_dispatch' || (vars.STOCKS_CRYPTO == 'on' && vars.RUNNER != 'mac' && vars.RUNNER != 'server')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
+      I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
+      KILL_SWITCH: ${{ (github.event_name == 'workflow_dispatch' && inputs.action == 'kill-all') && 'true' || vars.KILL_SWITCH || 'false' }}
+      STOCK_PCT: ${{ vars.STOCK_PCT }}
+      CRYPTO_PCT: ${{ vars.CRYPTO_PCT }}
+      OPTIONS_PCT: ${{ vars.OPTIONS_PCT }}
+      STOCK_MAX_USD: ${{ vars.STOCK_MAX_USD }}
+      CRYPTO_MAX_USD: ${{ vars.CRYPTO_MAX_USD }}
+      OPTIONS_MAX_USD: ${{ vars.OPTIONS_MAX_USD }}
+      MAX_LOSS_PCT: ${{ vars.MAX_LOSS_PCT }}
+      NET_DEPOSITS_OVERRIDE: ${{ vars.NET_DEPOSITS_OVERRIDE }}
+      STOCK_MODE: ${{ vars.STOCK_MODE }}
+      STOCK_RSI2_SYMBOLS: ${{ vars.STOCK_RSI2_SYMBOLS }}
+      CASH_SYMBOL: ${{ vars.CASH_SYMBOL }}
+      CRYPTO_SYMBOLS: ${{ vars.CRYPTO_SYMBOLS }}
+      OPTIONS_ENABLED: ${{ vars.OPTIONS_ENABLED || 'false' }}
+      OPTIONS_RISK_PER_TRADE: ${{ vars.OPTIONS_RISK_PER_TRADE }}
+      FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q tests
+
+      - name: Stock bot
+        if: contains(github.event.schedule, '* * 1-5') || (github.event_name == 'workflow_dispatch' && (inputs.action == 'stock' || inputs.action == 'kill-all'))
+        run: python stock_bot.py
+      - name: Options bot
+        if: always() && (contains(github.event.schedule, '* * 1-5') || (github.event_name == 'workflow_dispatch' && (inputs.action == 'options' || inputs.action == 'kill-all')))
+        run: python options_bot.py
+      - name: Crypto bot
+        if: always() && (github.event.schedule == '10 0 * * *' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'crypto' || inputs.action == 'kill-all')))
+        run: python crypto_bot.py
+      - name: Daily summary
+        if: always() && (github.event.schedule == '40 0 * * *' || (github.event_name == 'workflow_dispatch' && (inputs.action == 'summary' || inputs.action == 'kill-all')))
+        run: python summary.py
+      - name: Tell my phone if anything failed
+        if: failure() && env.NTFY_TOPIC != ''
+        run: |
+          curl -s -H "Title: Bot run FAILED" -H "Priority: high" -d "Open GitHub > Actions to see the log." "https://ntfy.sh/$NTFY_TOPIC"

@@ -1,0 +1,622 @@
+<title>SPY &amp; BTC Bot Playbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a trading desk manual. Sticky contents rail on wide screens, one reading column, data set in mono like a ticker. */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#151a22; --muted:#596273; --rule:#dbe0e8;
+  --accent:#0d6b52; --accent-soft:#e3f1ec; --loss:#b3261e; --warn:#8a5a00; --warn-soft:#fbf1dc;
+  --s1:#0d6b52; --s2:#7a8494; --s3:#3a63b8;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1116; --surface:#161b22; --fg:#e4e8ee; --muted:#9aa4b2; --rule:#2a313c;
+  --accent:#43c59a; --accent-soft:#12302a; --loss:#ff7b72; --warn:#e3b341; --warn-soft:#2d2410;
+  --s1:#43c59a; --s2:#8b949e; --s3:#79a6ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1116; --surface:#161b22; --fg:#e4e8ee; --muted:#9aa4b2; --rule:#2a313c;
+  --accent:#43c59a; --accent-soft:#12302a; --loss:#ff7b72; --warn:#e3b341; --warn-soft:#2d2410;
+  --s1:#43c59a; --s2:#8b949e; --s3:#79a6ff; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:230px minmax(0,1fr);gap:48px;padding-block:40px 80px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;font-family:var(--display);font-size:14px;max-height:calc(100vh - 48px);overflow:auto}
+nav.toc p{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px;color:var(--muted);margin:0 0 10px}
+nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;counter-reset:t}
+nav.toc a{color:var(--fg);text-decoration:none;display:block;padding:4px 8px;border-radius:4px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--accent-soft);color:var(--accent);outline:none}
+main{min-width:0;max-width:760px}
+h1,h2,h3{font-family:var(--display);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(34px,5vw,54px);font-weight:800;font-stretch:80%;letter-spacing:-.01em}
+h2{font-size:30px;font-weight:800;font-stretch:85%;margin-top:64px;padding-top:20px;border-top:2px solid var(--fg)}
+h3{font-size:20px;font-weight:700;margin-top:32px}
+p,ul,ol{margin:14px 0}
+li{margin:6px 0}
+a{color:var(--accent)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 12px}
+.lede{font-size:20px;color:var(--muted);max-width:62ch}
+.tape{font-family:var(--mono);font-size:13px;display:flex;flex-wrap:wrap;gap:8px 22px;margin:22px 0 0;padding:12px 0;border-block:1px solid var(--rule);color:var(--muted)}
+.tape b{color:var(--fg);font-weight:600}
+.up{color:var(--accent)} .dn{color:var(--loss)}
+code,kbd,.mono{font-family:var(--mono);font-size:.84em}
+:not(pre)>code{background:var(--accent-soft);padding:1px 5px;border-radius:3px}
+pre{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:14px 16px;overflow-x:auto;font-size:14px;line-height:1.5;margin:14px 0}
+.tbl{overflow-x:auto;margin:16px 0;border:1px solid var(--rule);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:13.5px;white-space:nowrap}
+tr.pick td{background:var(--accent-soft)}
+.callout{border-left:4px solid var(--accent);background:var(--surface);padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+.callout p:first-child{margin-top:0} .callout p:last-child{margin-bottom:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
+.kpi{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:14px}
+.kpi .l{font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:4px}
+.kpi .s{font-size:13px;color:var(--muted)}
+.chart{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:12px 12px 6px;margin:18px 0}
+.chart svg{display:block;width:100%;height:auto}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-family:var(--mono);font-size:12px;color:var(--muted);padding:4px 4px 8px}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:6px}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps>li{counter-increment:s;position:relative;padding-left:46px;margin:22px 0}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:var(--fg);color:var(--bg);font-family:var(--display);font-weight:700;display:grid;place-items:center;font-size:15px}
+.steps>li>b:first-child{font-family:var(--display);font-size:18px;display:block}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cols>div{min-width:0}
+details{border:1px solid var(--rule);border-radius:6px;background:var(--surface);padding:10px 14px;margin:10px 0}
+summary{cursor:pointer;font-family:var(--display);font-weight:700}
+.small{font-size:14px;color:var(--muted)}
+.sources li{font-size:15px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr;gap:8px}nav.toc{position:static;max-height:none;border:1px solid var(--rule);border-radius:6px;padding:12px;background:var(--surface)}nav.toc ol{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){body{font-size:16px}.cols{grid-template-columns:1fr}nav.toc ol{grid-template-columns:1fr}h2{font-size:25px}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#bottom-line">The bottom line</a></li>
+    <li><a href="#brokers">Where to trade</a></li>
+    <li><a href="#rules">Day trading, options, crypto rules</a></li>
+    <li><a href="#evidence">What the evidence says</a></li>
+    <li><a href="#method">How I tested</a></li>
+    <li><a href="#stock-bot">Bot 1: SPY</a></li>
+    <li><a href="#crypto-bot">Bot 2: BTC</a></li>
+    <li><a href="#options-bot">Bot 3: options</a></li>
+    <li><a href="#agents">Claude agents</a></li>
+    <li><a href="#mac">Always-on Mac</a></li>
+    <li><a href="#more-trades">More trades, more coins</a></li>
+    <li><a href="#deposits">Adding money</a></li>
+    <li><a href="#fees">Fees, all in</a></li>
+    <li><a href="#taxes">Taxes: federal + California</a></li>
+    <li><a href="#risk">Risk controls</a></li>
+    <li><a href="#setup">Setup on your MacBook</a></li>
+    <li><a href="#iphone">Running it from your iPhone</a></li>
+    <li><a href="#hosting">Hosting options</a></li>
+    <li><a href="#claude">Working with Claude Code</a></li>
+    <li><a href="#golive">Going live checklist</a></li>
+    <li><a href="#sources">Sources</a></li>
+  </ol>
+</nav>
+
+<main>
+<p class="eyebrow">Prepared for David · Los Angeles, CA · October 2026 · v3</p>
+<h1>Trading Bots &amp; Agents Playbook</h1>
+<p class="lede">An always-on trading setup that runs on your MacBook and reports to your iPhone. Three tested, once-a-day rules bots (S&amp;P 500, Bitcoin, SPY put spreads) form the steady core. Two Claude agents, one for stocks and one for crypto, watch the whole market and every headline all day, wake up when something happens, and decide what to buy or sell within hard limits written in code. Your phone buzzes only when trades have filled.</p>
+<div class="tape" aria-label="Key figures">
+  <span>Broker <b>Alpaca</b> (stocks $0, crypto 0.25%)</span>
+  <span>Stock bot OOS <b class="up">~6–7%/yr</b> · max DD <b>−12%</b></span>
+  <span>Crypto bot OOS <b class="up">~21%/yr</b> · max DD <b>−34%</b></span>
+  <span>Options bot (model) <b>~9–16%/yr</b> on its sleeve</span>
+  <span>Claude agents <b>any stock or coin</b>, news-aware</span>
+  <span>Code <b>47 tests passing</b></span>
+</div>
+
+<h2 id="bottom-line">The bottom line</h2>
+<p>I tested about a dozen well-known strategies on 98 years of S&amp;P 500 data, 13 years of Bitcoin data and 35 years of VIX data, with fees and realistic delays. Three designs held up, and those are your bots. Each one sizes itself as a share of your account, so every deposit gets put to work on the next run without touching any settings.</p>
+<div class="kpis">
+  <div class="kpi"><div class="l">Stock bot, 2000–2025</div><div class="v up">6.2%/yr</div><div class="s">vs 8.0% buy &amp; hold. Worst drop −12% vs −55%.</div></div>
+  <div class="kpi"><div class="l">Crypto bot, 2021–Oct 2026</div><div class="v up">21.4%/yr</div><div class="s">vs 20.0% holding BTC. Worst drop −34% vs −77%.</div></div>
+  <div class="kpi"><div class="l">Stock + crypto, $200 each, 2021–2025</div><div class="v">−$53 to +$182</div><div class="s">Worst year (2022) to best (2023), before tax.</div></div>
+</div>
+<div class="callout warn">
+<p><b>What these bots really do.</b> None of them is a money machine. The stock bot earned <i>less</i> than simply holding SPY since 2000; what it buys you is a much smaller worst-case loss. The crypto bot roughly matched Bitcoin's return with less than half the crash. The options bot harvests a small, steady premium and occasionally gives a chunk back. At $1,000 a good year is pocket money; the payoff is a tested system that grows with your deposits without blowing up.</p>
+</div>
+<p>Anyone selling you a bot that makes 5% a week is selling the bot, not the returns. The research below explains why the honest numbers look like this.</p>
+<div class="tbl"><table>
+<thead><tr><th>Bot</th><th>Share of account</th><th>Trades a year</th><th>Runs</th><th>Starts trading at</th></tr></thead>
+<tbody>
+<tr><td>Stock (SPY trend + RSI(2), optional QQQ/IWM/DIA)</td><td class="n">30%</td><td class="n">~17 per ETF</td><td>~12:30 pm PT, market days</td><td>any balance</td></tr>
+<tr><td>Crypto (BTC, optional ETH and others)</td><td class="n">20%</td><td class="n">~75 per coin</td><td>5 pm PT daily (4 pm in winter)</td><td>any balance</td></tr>
+<tr><td>Options (SPY put credit spreads)</td><td class="n">15%</td><td class="n">~18 spreads</td><td>~12:30 pm PT, market days</td><td>about $9k–53k, depending on risk setting</td></tr>
+<tr><td><b>Stock agent</b> (Claude, any liquid US stock/ETF)</td><td class="n">20%</td><td class="n">its call, max 10/day</td><td>7:00, 9:30, 12:10 PT + on news/moves</td><td>any balance (Mac runner)</td></tr>
+<tr><td><b>Crypto agent</b> (Claude, any Alpaca coin)</td><td class="n">15%</td><td class="n">its call, max 10/day</td><td>every 6 h + on news/moves</td><td>any balance (Mac runner)</td></tr>
+</tbody></table></div>
+
+<h2 id="brokers">Where to trade</h2>
+<p>You need a broker with a real trading API, a free paper-trading account, zero stock commissions, crypto available in California, and no account minimum. Alpaca is the only one that checks every box for all three bots in one account, with options and crypto in the same login.</p>
+<div class="tbl"><table>
+<thead><tr><th>Broker</th><th>Stocks/ETFs</th><th>Options</th><th>Crypto</th><th>API &amp; paper</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr class="pick"><td><b>Alpaca</b></td><td>$0, fractional, $0 min</td><td>$0 commission + small regulatory fees</td><td>Yes in CA. 0.15% maker / 0.25% taker (under $100k/mo)</td><td>Best-in-class Python SDK; free paper account mirrors live</td><td><b>Use for all three bots</b></td></tr>
+<tr><td>Interactive Brokers</td><td>$0 (IBKR Lite) or per-share (Pro)</td><td>~$0.15–0.65/contract</td><td>Yes, via partners</td><td>Powerful but complex (needs TWS/Gateway running); paper yes</td><td>Upgrade path; supports IRAs via API</td></tr>
+<tr><td>Charles Schwab</td><td>$0</td><td>$0.65/contract</td><td>No spot crypto</td><td>Free Trader API after approval; tokens expire weekly</td><td>Fine for stocks only</td></tr>
+<tr><td>Tradier</td><td>$0</td><td>From $0.35/contract or flat plan</td><td>No</td><td>Clean REST API; sandbox</td><td>Options-focused alternative</td></tr>
+<tr><td>Kraken</td><td>US stocks available</td><td>No (futures not for US)</td><td>Kraken Pro ~0.25% / 0.40% (some sources list higher; check)</td><td>Good API; no paper</td><td>Crypto backup</td></tr>
+<tr><td>Coinbase Advanced</td><td>No</td><td>No</td><td>~0.40% / 0.60% entry tier; US rates changed Sept 2026, check your tier</td><td>Good API; limited sandbox</td><td>Pricier for small accounts</td></tr>
+</tbody></table></div>
+<p class="small">Fees as published in October 2026. Brokers change them often, so check the live fee page before funding. Alpaca's crypto lists California among supported states. California's new crypto licensing law (DFAL) took effect July 1, 2026; you can check any exchange's status on the DFPI licensee search.</p>
+
+<h2 id="rules">Day trading, options and crypto rules</h2>
+<h3>The $25,000 day-trading rule is being retired</h3>
+<p>On April 14, 2026 the SEC approved FINRA's replacement of the Pattern Day Trader rule. The $25,000 minimum and the "4 day trades in 5 days" count are replaced by intraday margin checks. Two catches: brokers get up to 18 months to switch over, so yours may still enforce the old rule today, and margin still needs $2,000 of equity. A cash account was never subject to PDT, but you can only trade with settled money (stock trades settle the next business day).</p>
+<p><b>Why this doesn't matter for your bots:</b> all three trade at most once a day and hold overnight, so none is a day-trading strategy. That is deliberate (see the evidence section). Once your account passes $2,000 and Alpaca moves to the new rule, you could day trade freely, but the evidence says you shouldn't.</p>
+<h3>Options</h3>
+<p>Alpaca supports options through the API at $0 commission, including multi-leg spreads once you're approved for options Level 3 (apply in the Alpaca dashboard; spreads generally need a margin account, which needs $2,000+ equity). Buying options is where retail traders lose most: studies of the 2019–2021 options boom found large aggregate losses, mostly to bid-ask spreads and overpriced lottery-ticket calls. Selling index puts is the side with decades of evidence behind it, so that's what Bot 3 does, with a bought put underneath to cap the loss.</p>
+<h3>Crypto</h3>
+<p>Crypto trades 24/7 with no PDT rule, which is why the crypto bot uses UTC calendar days. US residents can't use offshore leverage or perpetual futures on major exchanges, and the bot uses no leverage anyway.</p>
+
+<h2 id="evidence">What the evidence says</h2>
+<p>I looked for rules with long, independent track records and good economic reasons to work. I also looked at what has consistently failed for retail traders.</p>
+<div class="tbl"><table>
+<thead><tr><th>Idea</th><th>Evidence</th><th>Used?</th></tr></thead>
+<tbody>
+<tr><td>Trend following (price above its long average, or positive 1–12 month return)</td><td>Faber 2007; Moskowitz, Ooi &amp; Pedersen 2012; Hurst, Ooi &amp; Pedersen 2017 found it worked across a century and dozens of markets, mainly by cutting crash losses</td><td>Both bots</td></tr>
+<tr><td>Short-term pullbacks in an uptrend (Connors RSI(2))</td><td>Connors &amp; Alvarez 2008; widely replicated on US index ETFs; my test confirms it after publication</td><td>Stock bot</td></tr>
+<tr><td>Crypto time-series momentum</td><td>Liu &amp; Tsyvinski 2021 (Review of Financial Studies): past BTC returns predict future returns over 1–8 weeks</td><td>Crypto bot</td></tr>
+<tr><td>Selling index puts (volatility risk premium)</td><td>Bondarenko 2019 for Cboe: the PutWrite index matched the S&amp;P 500 (9.5% vs 9.8%/yr, 1986–2018) with two-thirds the volatility and a −33% vs −51% worst drawdown. Index options have been priced above realized volatility by about 4 points on average</td><td>Options bot</td></tr>
+<tr><td>Volatility targeting</td><td>Moreira &amp; Muir 2017: scaling exposure down when volatility is high improves risk-adjusted returns</td><td>Crypto bot</td></tr>
+<tr><td>Turn-of-the-month effect</td><td>Strong historically (Lakonishok &amp; Smidt 1988) but my test shows Sharpe falling from 1.25 to 0.40 after 2000</td><td>Rejected</td></tr>
+<tr><td>Intraday day trading</td><td>Barber et al.: under 1% of Taiwanese day traders were reliably profitable. Chague et al. 2019: 97% of Brazilians who day-traded 300+ days lost money</td><td>Rejected</td></tr>
+</tbody></table></div>
+<p>Two warnings shaped every decision. McLean &amp; Pontiff (2016) found published strategies earn about 26% less out-of-sample and 58% less after publication. Bailey, Borwein, López de Prado &amp; Zhu (2014) showed that if you try enough parameter combinations, you will always find a backtest that looks amazing and means nothing. So I fixed the test periods before looking, preferred broad parameter plateaus over sharp peaks, and averaged several lookbacks instead of picking the best one.</p>
+
+<h2 id="method">How I tested</h2>
+<ul>
+<li><b>Data.</b> S&amp;P 500 daily closes and total return (dividends included, ETF expense ratio applied) plus T-bill rates, 1928–2025. Bitstamp BTC/USD minute bars, 2012 to Oct 21, 2026, rebuilt into daily bars.</li>
+<li><b>Split.</b> Stocks: tune on 1928–1999, judge on 2000–2025. Crypto: tune on 2013–2020, judge on 2021–2026.</li>
+<li><b>Costs.</b> Stocks 0.05% per trade (SPY's spread is about 0.01%, so this is conservative). Crypto 0.30% per trade (Alpaca's 0.25% taker fee + slippage), and stress-tested at 0.50%.</li>
+<li><b>Timing.</b> Decide on the close, trade at that close. Re-tested with a full one-day delay: results barely changed, so the edge doesn't depend on perfect timing.</li>
+<li><b>Walk-forward.</b> Re-tuning the stock trend length every 5 years on the prior 20 years gave 11.14%/yr, the same as just using 200 days (11.21%). Re-tuning added nothing, so the bots use fixed, standard settings.</li>
+</ul>
+<h3>What failed, and why it matters</h3>
+<div class="tbl"><table>
+<thead><tr><th>Test</th><th class="n">In-sample Sharpe</th><th class="n">Out-of-sample Sharpe</th><th>Lesson</th></tr></thead>
+<tbody>
+<tr><td>SPY 50-day trend</td><td class="n">1.04 (best)</td><td class="n dn">0.36 (worst)</td><td>The best backtest setting was the worst live one</td></tr>
+<tr><td>BTC 10-day trend</td><td class="n">1.68</td><td class="n dn">−0.03</td><td>Short lookbacks are noise plus fees</td></tr>
+<tr><td>BTC 7-day momentum</td><td class="n">1.69</td><td class="n dn">−0.13</td><td>Same</td></tr>
+<tr><td>Turn of month</td><td class="n">1.25</td><td class="n dn">0.40</td><td>Famous anomalies decay</td></tr>
+<tr><td>Buying dips in SPY downtrends</td><td class="n">0.30</td><td class="n">0.49</td><td>Lost 61% in the 1930s; rejected</td></tr>
+<tr><td>BTC hourly RSI dip-buying</td><td class="n" colspan="2">−2.6%/yr with zero fees; −33%/yr at 0.30% fees</td><td>Intraday crypto trading is a fee donation</td></tr>
+</tbody></table></div>
+<div class="callout"><p><b>Full disclosure.</b> I saw the out-of-sample grids before settling on the final designs (the 50/50 stock blend and the 6-signal crypto ensemble). I chose designs that avoid cherry-picking a single setting, but treat the out-of-sample figures as slightly optimistic. Three months of paper trading is the first truly unseen test.</p></div>
+
+<h2 id="stock-bot">Bot 1: SPY trend + pullback</h2>
+<p><b>Trades:</b> SPY only (optionally parks idle cash in SGOV, a T-bill ETF). <b>When:</b> once a day, about 20–40 minutes before the 4:00 pm ET close (1:20 pm Pacific).</p>
+<div class="cols">
+<div><h3>Sleeve A: trend (50%)</h3>
+<ul><li>Hold SPY when it closes more than 1% above its 200-day average.</li><li>Go to cash when it closes more than 1% below.</li><li>In between, keep what you have. This band halves whipsaw trades.</li></ul></div>
+<div><h3>Sleeve B: RSI(2) pullback (50%)</h3>
+<ul><li>Buy when SPY is above its 200-day average and the 2-day RSI is under 10 (a sharp short dip).</li><li>Sell when SPY closes above its 5-day average (usually 2–5 days later).</li><li>Invested about 10% of the time.</li></ul></div>
+</div>
+<div class="tbl"><table>
+<thead><tr><th>2000–2025 (out-of-sample)</th><th class="n">CAGR</th><th class="n">Volatility</th><th class="n">Sharpe</th><th class="n">Max drawdown</th><th class="n">2008</th><th class="n">2022</th></tr></thead>
+<tbody>
+<tr><td>Buy &amp; hold SPY</td><td class="n">8.00%</td><td class="n">19.4%</td><td class="n">0.49</td><td class="n dn">−55.2%</td><td class="n dn">−36.8%</td><td class="n dn">−18.2%</td></tr>
+<tr><td>Trend sleeve only (<code>STOCK_MODE=trend</code>)</td><td class="n">7.41%</td><td class="n">11.2%</td><td class="n">0.70</td><td class="n dn">−21.0%</td><td class="n up">+1.4%</td><td class="n dn">−11.7%</td></tr>
+<tr class="pick"><td><b>Blend (default)</b></td><td class="n">6.15%</td><td class="n">7.5%</td><td class="n">0.84</td><td class="n dn">−12.2%</td><td class="n up">+1.4%</td><td class="n dn">−6.5%</td></tr>
+</tbody></table></div>
+<p class="small">Idle cash earns the T-bill rate in this test (put it in SGOV to match). 1928–1999 in-sample: blend 7.96%/yr, max drawdown −35%, vs buy &amp; hold 10.96%, −84%.</p>
+<div class="chart" role="img" aria-label="Growth of $1, 2000 to 2025, log scale: buy and hold ends at 7.36, trend at 6.38, blend at 4.70">
+  <div class="legend"><span><i style="background:var(--s2)"></i>Buy &amp; hold</span><span><i style="background:var(--s3)"></i>Trend only</span><span><i style="background:var(--s1)"></i>Blend (default)</span></div>
+  <svg id="c-stock" viewBox="0 0 720 300"></svg>
+</div>
+<details><summary>Year by year, 2000–2025</summary>
+<div class="tbl"><table><thead><tr><th>Year</th><th class="n">Buy &amp; hold</th><th class="n">Trend</th><th class="n">Blend</th></tr></thead><tbody>
+<tr><td>2000</td><td class="n dn">-9.7%</td><td class="n dn">-9.3%</td><td class="n up">+2.4%</td></tr>
+<tr><td>2001</td><td class="n dn">-11.8%</td><td class="n up">+3.4%</td><td class="n up">+3.4%</td></tr>
+<tr><td>2002</td><td class="n dn">-21.6%</td><td class="n dn">-1.5%</td><td class="n up">+0.1%</td></tr>
+<tr><td>2003</td><td class="n up">+28.2%</td><td class="n up">+25.8%</td><td class="n up">+16.0%</td></tr>
+<tr><td>2004</td><td class="n up">+10.7%</td><td class="n up">+2.1%</td><td class="n up">+4.2%</td></tr>
+<tr><td>2005</td><td class="n up">+4.8%</td><td class="n dn">-0.6%</td><td class="n up">+2.2%</td></tr>
+<tr><td>2006</td><td class="n up">+15.8%</td><td class="n up">+8.5%</td><td class="n up">+7.9%</td></tr>
+<tr><td>2007</td><td class="n up">+5.1%</td><td class="n dn">-4.8%</td><td class="n dn">-1.4%</td></tr>
+<tr><td>2008</td><td class="n dn">-36.8%</td><td class="n up">+1.4%</td><td class="n up">+1.4%</td></tr>
+<tr><td>2009</td><td class="n up">+26.4%</td><td class="n up">+15.7%</td><td class="n up">+11.6%</td></tr>
+<tr><td>2010</td><td class="n up">+15.1%</td><td class="n up">+5.2%</td><td class="n up">+4.9%</td></tr>
+<tr><td>2011</td><td class="n up">+1.9%</td><td class="n up">+0.7%</td><td class="n dn">-3.2%</td></tr>
+<tr><td>2012</td><td class="n up">+16.0%</td><td class="n up">+9.6%</td><td class="n up">+7.1%</td></tr>
+<tr><td>2013</td><td class="n up">+32.3%</td><td class="n up">+32.3%</td><td class="n up">+17.4%</td></tr>
+<tr><td>2014</td><td class="n up">+13.5%</td><td class="n up">+9.5%</td><td class="n up">+5.4%</td></tr>
+<tr><td>2015</td><td class="n up">+1.2%</td><td class="n dn">-6.3%</td><td class="n dn">-0.8%</td></tr>
+<tr><td>2016</td><td class="n up">+12.0%</td><td class="n up">+7.7%</td><td class="n up">+5.2%</td></tr>
+<tr><td>2017</td><td class="n up">+21.7%</td><td class="n up">+21.7%</td><td class="n up">+14.2%</td></tr>
+<tr><td>2018</td><td class="n dn">-4.6%</td><td class="n dn">-5.3%</td><td class="n dn">-5.0%</td></tr>
+<tr><td>2019</td><td class="n up">+31.2%</td><td class="n up">+18.5%</td><td class="n up">+10.6%</td></tr>
+<tr><td>2020</td><td class="n up">+18.3%</td><td class="n up">+6.2%</td><td class="n up">+4.8%</td></tr>
+<tr><td>2021</td><td class="n up">+28.7%</td><td class="n up">+28.7%</td><td class="n up">+21.2%</td></tr>
+<tr><td>2022</td><td class="n dn">-18.2%</td><td class="n dn">-11.7%</td><td class="n dn">-6.5%</td></tr>
+<tr><td>2023</td><td class="n up">+26.2%</td><td class="n up">+12.8%</td><td class="n up">+10.1%</td></tr>
+<tr><td>2024</td><td class="n up">+24.9%</td><td class="n up">+24.9%</td><td class="n up">+21.4%</td></tr>
+<tr><td>2025</td><td class="n up">+17.5%</td><td class="n up">+13.4%</td><td class="n up">+11.4%</td></tr>
+</tbody></table></div></details>
+<p><b>Which mode?</b> Keep <code>blend</code> while you learn: its worst year since 2000 was −6.5%. Switch to <code>trend</code> if you want more growth and can sit through a −20% stretch. If you only care about maximum long-run return and can stomach −55%, an index fund beats both, and that's a fine choice too.</p>
+
+<h2 id="crypto-bot">Bot 2: BTC trend ensemble</h2>
+<p><b>Trades:</b> BTC/USD only. <b>When:</b> once a day just after 00:00 UTC (5 pm Pacific in summer, 4 pm in winter).</p>
+<ol>
+<li><b>Trend vote.</b> Six yes/no checks: is BTC above its 50, 100 and 150-day averages, and is its 28, 56 and 120-day return positive? The score is the share of "yes" votes (0 to 1).</li>
+<li><b>Size by volatility.</b> Multiply the score by 40% ÷ BTC's recent 30-day annualized volatility, capped at 100%. BTC usually runs 50–80% volatility, so a full "yes" means holding roughly half to all of the allocation.</li>
+<li><b>Trade only on real changes.</b> Rebalance when the target moves 10 points away from what you hold, or when it drops to zero. That cut trading from about 230 to about 74 small trades a year.</li>
+</ol>
+<div class="tbl"><table>
+<thead><tr><th>Period</th><th>Strategy</th><th class="n">CAGR</th><th class="n">Volatility</th><th class="n">Sharpe</th><th class="n">Max drawdown</th></tr></thead>
+<tbody>
+<tr><td rowspan="2">2013–2020 (in-sample)</td><td>Hold BTC</td><td class="n">161.3%</td><td class="n">87.4%</td><td class="n">1.55</td><td class="n dn">−84.9%</td></tr>
+<tr><td>Bot</td><td class="n">75.7%</td><td class="n">33.7%</td><td class="n">1.84</td><td class="n dn">−37.2%</td></tr>
+<tr><td rowspan="3">2021–Oct 2026 (out-of-sample)</td><td>Hold BTC</td><td class="n">20.0%</td><td class="n">57.1%</td><td class="n">0.60</td><td class="n dn">−76.7%</td></tr>
+<tr class="pick"><td><b>Bot, 0.30% cost</b></td><td class="n">21.4%</td><td class="n">26.6%</td><td class="n">0.86</td><td class="n dn">−33.7%</td></tr>
+<tr><td>Bot, 0.50% cost</td><td class="n">18.2%</td><td class="n">26.6%</td><td class="n">0.76</td><td class="n dn">−35.4%</td></tr>
+</tbody></table></div>
+<div class="chart" role="img" aria-label="Growth of $1 from January 2021 to October 2026, log scale: holding BTC ends at 2.88, the bot at 3.08">
+  <div class="legend"><span><i style="background:var(--s2)"></i>Hold BTC</span><span><i style="background:var(--s1)"></i>Crypto bot</span></div>
+  <svg id="c-crypto" viewBox="0 0 720 300"></svg>
+</div>
+<details><summary>Year by year, 2014–2026</summary>
+<div class="tbl"><table><thead><tr><th>Year</th><th class="n">Hold BTC</th><th class="n">Bot</th></tr></thead><tbody>
+<tr><td>2014</td><td class="n dn">-56.1%</td><td class="n dn">-16.7%</td></tr>
+<tr><td>2015</td><td class="n up">+34.2%</td><td class="n up">+38.5%</td></tr>
+<tr><td>2016</td><td class="n up">+124.3%</td><td class="n up">+92.4%</td></tr>
+<tr><td>2017</td><td class="n up">+1336.4%</td><td class="n up">+260.3%</td></tr>
+<tr><td>2018</td><td class="n dn">-73.4%</td><td class="n dn">-25.3%</td></tr>
+<tr><td>2019</td><td class="n up">+94.1%</td><td class="n up">+82.6%</td></tr>
+<tr><td>2020</td><td class="n up">+304.5%</td><td class="n up">+143.4%</td></tr>
+<tr><td>2021</td><td class="n up">+59.4%</td><td class="n up">+27.2%</td></tr>
+<tr><td>2022</td><td class="n dn">-64.2%</td><td class="n dn">-20.2%</td></tr>
+<tr><td>2023</td><td class="n up">+155.7%</td><td class="n up">+81.0%</td></tr>
+<tr><td>2024</td><td class="n up">+121.0%</td><td class="n up">+65.5%</td></tr>
+<tr><td>2025</td><td class="n dn">-6.3%</td><td class="n dn">-6.4%</td></tr>
+<tr><td>2026 (to Oct 21)</td><td class="n dn">-4.6%</td><td class="n up">+8.3%</td></tr>
+</tbody></table></div></details>
+<p>Notice the pattern: the bot gives up a lot in mania years (2017: +260% vs +1,336%) and loses far less in crashes (2022: −20% vs −64%). Expect that trade-off to continue. I tested on BTC only. To add ETH or other coins, run <code>validate.py</code> first (see <a href="#more-trades">More trades</a>).</p>
+
+
+<h2 id="options-bot">Bot 3: SPY put credit spreads</h2>
+<p><b>Trades:</b> SPY options, one spread position at a time. <b>When:</b> right after the stock bot, ~1:20 pm Pacific. <b>Off by default</b> (<code>OPTIONS_ENABLED=false</code>) until you're approved for Level 3 and have paper-tested it.</p>
+<ol>
+<li><b>Only in uptrends.</b> Opens a new spread only when the stock bot's 200-day trend sleeve is ON.</li>
+<li><b>Sell the 25-delta put about 45 days out</b> (roughly 5–7% below SPY's price, about a 1-in-4 chance of finishing in the money), and <b>buy a put about 3% of SPY's price lower</b> (about $20 below at today's prices). You collect a credit up front.</li>
+<li><b>Get out early.</b> Close when 50% of the credit is captured, or at 21 days to expiry, whichever comes first. That avoids the last weeks when losses accelerate and keeps assignment risk low.</li>
+<li><b>Size by worst case.</b> The most one position can lose is the strike gap minus the credit, about $1,600 per spread today. The bot only opens as many spreads as fit inside <code>OPTIONS_RISK_PER_TRADE</code> (20%) of the options sleeve. If one doesn't fit, it waits and tells you how much equity it needs.</li>
+</ol>
+<h3>How I tested it, and why the range is wide</h3>
+<p>I couldn't get historical option quotes, so I priced every spread with Black-Scholes using that day's VIX, adjusted for put skew, plus $0.10 of slippage per spread each way. Results depend heavily on the skew assumption, so I report a range rather than one number. Narrow spreads ($5 wide) lost money in most versions once costs were included; only wide spreads held up in every version.</p>
+<div class="tbl"><table>
+<thead><tr><th>Options sleeve, 20% risk per trade</th><th class="n">1991–2007</th><th class="n">2008–2025 (out-of-sample)</th><th class="n">Max drawdown</th><th class="n">Win rate</th></tr></thead>
+<tbody>
+<tr><td>Cheap puts assumption</td><td class="n">14.3%/yr</td><td class="n">15.9%/yr</td><td class="n dn">−32%</td><td class="n">83%</td></tr>
+<tr class="pick"><td><b>Middle assumption</b></td><td class="n">11.1%/yr</td><td class="n">13.0%/yr</td><td class="n dn">−25%</td><td class="n">83%</td></tr>
+<tr><td>Expensive puts assumption</td><td class="n">6.5%/yr</td><td class="n">8.8%/yr</td><td class="n dn">−24%</td><td class="n">81%</td></tr>
+</tbody></table></div>
+<p class="small">Middle assumption, year by year 2008–2025: 2008 −7.4%, 2011 −8.6%, 2018 −6.3%, 2022 −21.3%, best 2013 +51%. This is a model, not market data; I'd plan around the low end. The real-world anchor is the Cboe PutWrite index: about stock-market returns with lower volatility.</p>
+<div class="callout warn"><p><b>The catch is account size.</b> A typical win is about 10% of the worst case, and a typical loss is about 25% of it (and the worst case is 100%). Many small wins, occasional big losses. Here is roughly the equity needed before the bot places its first spread:</p></div>
+<div class="tbl"><table>
+<thead><tr><th>Settings</th><th class="n">Equity needed</th><th>What a max loss does</th></tr></thead>
+<tbody>
+<tr class="pick"><td>Default: <code>OPTIONS_PCT=0.15</code>, <code>OPTIONS_RISK_PER_TRADE=0.20</code></td><td class="n">~$53,000</td><td>−3% of the account</td></tr>
+<tr><td><code>OPTIONS_PCT=0.25</code>, <code>RISK=0.50</code></td><td class="n">~$12,800</td><td>−12.5% of the account</td></tr>
+<tr><td><code>OPTIONS_PCT=0.35</code>, <code>RISK=0.50</code></td><td class="n">~$9,100</td><td>−17.5% of the account</td></tr>
+<tr><td><code>OPTIONS_PCT=0.35</code>, <code>RISK=1.0</code> (not recommended)</td><td class="n">~$4,600</td><td>−35%: trips the account loss limit and stops every bot</td></tr>
+</tbody></table></div>
+<p>So with $1,000 and monthly deposits, the options bot will sit in cash for a while; that's working as intended. Its sleeve isn't wasted: set <code>OPTIONS_PCT=0</code> until you get there and the money goes to the other bots. Paper trading has $100k+ by default, so you can watch the options bot work there right away.</p>
+<h3>Options details to know</h3>
+<ul>
+<li><b>Assignment:</b> SPY options are American-style, so a short put can be assigned early if it's deep in the money. Closing at 21 days makes this rare. If it happens, you'd briefly own 100 SPY shares per contract; the long put still caps the loss. Close everything in the Alpaca app and the bot carries on.</li>
+<li><b>Order pricing:</b> the bot sends one multi-leg limit order at the mid price. Alpaca's docs don't spell out whether a credit is a negative limit price, so <code>OPTIONS_CREDIT_IS_NEGATIVE</code> is a setting. Check your first paper fill and flip it if the order is rejected.</li>
+<li><b>Earnings and events</b> don't apply to SPY, but big macro days (Fed, CPI) move it. The bot doesn't try to dodge them.</li>
+</ul>
+
+<h2 id="agents">Claude agents: any stock, any coin, reacting to news</h2>
+<p>A bot follows a fixed recipe. An agent gets a goal, tools and limits, looks at what is happening, and decides. Both agents here are Claude, running on your Mac through Claude Code and your Claude Pro plan. Each run, the agent:</p>
+<ol class="steps">
+<li><b>Gets woken up</b>On a schedule (stocks: 10:00, 12:30 and 15:10 New York time; crypto: every 6 hours) <i>or</i> the moment something happens: a material headline about something it holds, a strongly positive one about something it could buy, a holding moving 5% in a day (8% for crypto), SPY falling 2%, BTC moving 5%, or a hack/delisting story.</li>
+<li><b>Looks around</b>Its tools: its portfolio with the thesis it wrote when buying, a whole-market scan (about 1,000–1,500 liquid US stocks and ETFs ranked by momentum and news, plus today's top movers; or every Alpaca coin ranked by trend and news), detailed lookups on any symbol, and the scored news feed. It also reads its own last few journal entries, so it remembers what it was thinking.</li>
+<li><b>Decides and acts</b>Buys or sells with a written reason, or does nothing. Every order passes a risk gate in code before it reaches Alpaca.</li>
+<li><b>Reports</b>If it traded, your phone gets one push after the orders fill: what it bought or sold, the fill prices, and its reasoning. If it decided to do nothing, you hear nothing.</li>
+</ol>
+<p><b>The news feed.</b> Every Alpaca/Benzinga headline (stocks and crypto, around the clock) is scored by Claude for each ticker it names: direction (−1 to +1), how much it matters (0 to 1), and a tag such as earnings, acquisition target, guidance, dilution, hack. Scores tilt the market ranking, block acquisition targets and bankruptcies, and trigger the wake-ups above.</p>
+
+<h3>What the evidence says about this</h3>
+<div class="callout warn"><p><b>Be clear-eyed: the agents can't be backtested, the rules bots can.</b> The ingredients have research behind them. Momentum across stocks has decades of out-of-sample evidence (Jegadeesh &amp; Titman 1993; volatility-scaled momentum, Barroso &amp; Santa-Clara 2015). Lopez-Lira &amp; Tang found that LLM scores of news headlines predict next-day stock returns, strongest in smaller stocks and fading within days. But a 2025 study (Gao, Jiang &amp; Yan) showed LLM backtests are inflated because the model may remember what happened next; the honest tests use only news from after the model's training cutoff, where the effect was smaller but still there in 2024. Nobody can backtest an agent like this one honestly, so the only real test is paper trading it forward. Expect it to be noisier than the rules bots, and judge it after 3+ months against simply holding SPY and BTC.</p></div>
+
+<h3>Limits the agents can't override</h3>
+<div class="tbl"><table>
+<thead><tr><th>Limit</th><th>Default</th><th>Setting</th></tr></thead>
+<tbody>
+<tr><td>Share of the account</td><td>stock agent 20%, crypto agent 15%</td><td><code>AGENT_STOCK_PCT</code>, <code>AGENT_CRYPTO_PCT</code></td></tr>
+<tr><td>Positions</td><td>max 6, each max 30% of its sleeve</td><td><code>AGENT_MAX_POSITIONS</code>, <code>AGENT_MAX_POSITION_PCT</code></td></tr>
+<tr><td>Orders</td><td>max 10 per agent per day (selling is always allowed)</td><td><code>AGENT_MAX_ORDERS_PER_DAY</code></td></tr>
+<tr><td>Automatic stop-loss</td><td>sold at −12% from entry (crypto −20%), checked every minute without AI, then 10-day cooldown</td><td><code>AGENT_STOCK_STOP_PCT</code>, <code>AGENT_CRYPTO_STOP_PCT</code></td></tr>
+<tr><td>Losing streak brake</td><td>buys paused if open losses exceed 25% of the sleeve</td><td><code>AGENT_SLEEVE_MAX_DD</code></td></tr>
+<tr><td>What it may trade</td><td>long only; no options, shorting, margin, leveraged/inverse ETFs, stocks under $5 or under $20M a day of volume; never the rules bots' symbols</td><td><code>AGENT_MIN_PRICE</code>, <code>AGENT_MIN_DOLLAR_VOL</code></td></tr>
+<tr><td>Day-trade rule</td><td>under $25k, it won't make a 4th day trade in 5 days</td><td>built in</td></tr>
+<tr><td>Claude usage</td><td>max 12 runs per agent per day; on the Pro plan it pauses for an hour when your limit is hit; in API mode $2/day total (news max $0.75)</td><td><code>CLAUDE_DAILY_BUDGET_USD</code>, <code>NEWS_DAILY_BUDGET_USD</code>, <code>AGENT_MAX_RUNS_PER_DAY</code></td></tr>
+<tr><td>Account loss limit and kill switch</td><td>same as the bots: −35% vs deposits, or "kill" from your phone</td><td><code>MAX_LOSS_PCT</code>, <code>CONTROL_TOPIC</code></td></tr>
+</tbody></table></div>
+
+<h3>Which Claude it uses</h3>
+<p><b>Default: your Claude Pro plan</b> (<code>CLAUDE_BACKEND=pro</code>). The runner calls Claude Code in its non-interactive mode (<code>claude -p</code>), signed in with your account. No API key, no extra bill. Claude Code's own tools (commands, files, web) are switched off for these calls, so Claude can only answer; every action goes through the bot's risk-checked tools. Each news batch is one call, and each agent run is about 3–8 calls.</p>
+<ul>
+<li><b>Shared limits.</b> These calls count against the same usage limits as your own Claude chats and Claude Code. When the limit is hit, the agents and news scoring pause for an hour and try again; the rules bots and stop-losses keep running without Claude. The <code>status</code> command shows how many calls were made today.</li>
+<li><b>Model.</b> Blank <code>CLAUDE_CODE_MODEL</code> uses your plan's default. Set <code>opus</code> for the strongest reasoning (uses your limits faster), or <code>haiku</code> to go easy on them.</li>
+<li><b>Plan terms.</b> A program calling Claude on its own around the clock is a heavier, more automated use than a person chatting. Check Anthropic's current terms for your plan. If it ever becomes a problem, switch to the API.</li>
+</ul>
+<p><b>Alternative: the Claude API</b> (<code>CLAUDE_BACKEND=api</code> plus an <code>ANTHROPIC_API_KEY</code> from <a href="https://platform.claude.com" target="_blank" rel="noopener">platform.claude.com</a>). It's billed per token, separately from your plan, and it doesn't touch your chat limits. Rough cost for a normal day (about 11 agent runs plus news):</p>
+<div class="tbl"><table>
+<thead><tr><th>API model</th><th class="n">Per million tokens (in / out)</th><th class="n">Per agent run</th><th class="n">Per month</th></tr></thead>
+<tbody>
+<tr><td>Claude Opus 5.5</td><td class="n">$4 / $20</td><td class="n">~$0.10–0.25</td><td class="n">~$40–60 (capped by <code>CLAUDE_DAILY_BUDGET_USD</code>)</td></tr>
+<tr><td>Claude Haiku 5.5</td><td class="n">$0.10 / $0.50</td><td class="n">~$0.003–0.01</td><td class="n">~$2–4</td></tr>
+</tbody></table></div>
+<p class="small">In API mode, Opus calls opt into automatic fallback: if Opus's safety filter wrongly declines a request, Anthropic re-runs it on a fallback model so the agent doesn't stall.</p>
+
+<h2 id="mac">The always-on Mac runner</h2>
+<p><code>daemon.py</code> is one program that runs day and night on your MacBook. macOS's built-in service manager (launchd) starts it when you log in and restarts it within 30 seconds if it ever crashes. Every 30 seconds it checks what's due:</p>
+<div class="tbl"><table>
+<thead><tr><th>Job</th><th>When</th><th>Uses Claude?</th></tr></thead>
+<tbody>
+<tr><td>Rules bots (stock + options, then crypto)</td><td>~25–45 min before the close; 00:10 UTC (5:10 pm PT summer)</td><td>No</td></tr>
+<tr><td>Stop-losses on agent positions</td><td>every minute</td><td>No</td></tr>
+<tr><td>Price shock check (holdings, SPY, BTC)</td><td>every 5 minutes</td><td>No (it wakes an agent)</td></tr>
+<tr><td>News scoring</td><td>every 15 minutes, 24/7</td><td>Yes, cheap</td></tr>
+<tr><td>Stock agent / crypto agent</td><td>schedule + wake-ups (at most every 20 min from events)</td><td>Yes</td></tr>
+<tr><td>Commands from your phone</td><td>checked every 30 seconds</td><td>No</td></tr>
+<tr><td>"I'm alive" ping (optional)</td><td>every 5 minutes</td><td>No</td></tr>
+</tbody></table></div>
+<h3>Keeping a laptop awake</h3>
+<ul>
+<li><b>Plugged in, lid open.</b> The installer runs <code>sudo pmset -c sleep 0</code> (never sleep on the charger; the screen still turns off) and wraps the runner in <code>caffeinate</code>. A MacBook still sleeps when you <b>close the lid</b> unless an external display is attached, so leave it open (screen dims on its own). Or check <i>System Settings → Battery → Options → Prevent automatic sleeping on power adapter when the display is off</i>.</li>
+<li><b>Restarts.</b> launchd starts the runner after you log in. macOS updates can restart overnight: turn on automatic login if FileVault allows it, or log in after an update. <code>pmset autorestart</code> brings the Mac back after a power cut.</li>
+<li><b>Know when it's down.</b> A sleeping Mac can't tell you it's asleep. Create a free check at healthchecks.io (period 5 min, grace 10 min), connect its ntfy or email alert, and paste the ping URL into <code>HEALTHCHECK_URL</code>. If the Mac goes quiet, you get a push. The runner also tells you when it wakes after a gap.</li>
+<li><b>Missed runs are safe.</b> A rules bot that misses its window simply trades the next day. The crypto bot catches up the same day. Stop-losses resume the moment the Mac is back; Alpaca holds your positions either way.</li>
+<li><b>Battery health.</b> macOS's Optimized Battery Charging holds a plugged-in MacBook around 80%, so being on the charger 24/7 is fine.</li>
+</ul>
+<h3>Install it</h3>
+<pre>cd ~/Documents/trading-bots
+claude                  # once: log in with your Claude Pro account, then type /exit
+open -e .env            # add NTFY_TOPIC, CONTROL_TOPIC (and HEALTHCHECK_URL)
+bash mac/install.sh     # venv, Claude login check, tests, launchd service, no-sleep settings
+tail -f logs/runner.log # watch it work; Ctrl+C stops watching, not the runner</pre>
+<p>Then in GitHub: <i>Settings → Secrets and variables → Actions → Variables</i>, add <code>RUNNER=mac</code>. The cloud schedule stops (so nothing trades twice) but the manual <b>kill-all</b> button keeps working as a backup if the Mac is off. To stop the runner: <code>bash mac/uninstall.sh</code> (positions stay as they are).</p>
+
+<h2 id="more-trades">More trades, more coins</h2>
+<p>More trades only help if each one has an edge after fees. Shortening lookbacks or trading intraday made every strategy worse in testing. The honest way to trade more is to run the same tested rules on more markets:</p>
+<ul>
+<li><b>Stocks:</b> set <code>STOCK_RSI2_SYMBOLS=SPY,QQQ,IWM,DIA</code>. The RSI(2) pullback rule is widely reported to work on all four index ETFs, and each adds ~15 trades a year. The pullback half of the stock budget is split evenly across them.</li>
+<li><b>Crypto:</b> set <code>CRYPTO_SYMBOLS=BTC/USD,ETH/USD</code> (and others Alpaca lists). The crypto budget is split evenly across coins, and each gets the same trend and volatility rules. Smaller coins are more volatile, so the bot automatically holds less of them.</li>
+</ul>
+<p>I couldn't download ETF or altcoin history from my environment, so I built <code>validate.py</code>. On your Mac it downloads each symbol from Yahoo Finance and runs the unchanged rules. Because the rules were fixed on SPY and BTC first, every other symbol is a true out-of-sample test. It prints the exact settings line to paste, including only symbols that passed (stocks: Sharpe above 0.4 and return above 3%/yr; coins: Sharpe above 0.5 and a smaller drawdown than holding). Make that your first Claude Code task.</p>
+
+<h2 id="deposits">Adding money</h2>
+<ul>
+<li><b>Nothing to change.</b> Each bot sizes itself as a share of total equity, so a deposit is used on the next run. The stock bot ignores drift under 5% so small deposits don't cause trades every day; crypto tops up when a coin is 10 points under target.</li>
+<li><b>The loss limit follows your deposits.</b> The bots read your deposit history from Alpaca. If equity falls more than <code>MAX_LOSS_PCT</code> (35%) below what you've put in, all bots sell and stop. Depositing more raises the limit automatically.</li>
+<li><b>Deposit by ACH</b> in the Alpaca app (free). New money can take a few days to be withdrawable, and in a cash account it must settle before the bots can trade with it.</li>
+<li><b>Dollar-cost averaging is built in.</b> Regular deposits buy in at many prices, which smooths your entry no matter what the bots are doing.</li>
+<li><b>Want a hard ceiling?</b> Set <code>STOCK_MAX_USD</code>, <code>CRYPTO_MAX_USD</code> or <code>OPTIONS_MAX_USD</code>. Anything above stays in cash.</li>
+</ul>
+
+<h2 id="fees">Fees, all in</h2>
+<div class="tbl"><table>
+<thead><tr><th>Item</th><th>Stock bot (per $200)</th><th>Crypto bot (per $200)</th></tr></thead>
+<tbody>
+<tr><td>Commission / trading fee</td><td>$0</td><td>0.25% per trade (taker). The bot turns over its allocation about 13× a year, so ≈ <b>$6.60/yr</b></td></tr>
+<tr><td>Regulatory fees on sales</td><td>SEC $20.60 per $1M sold + FINRA TAF per share: pennies a year</td><td>None</td></tr>
+<tr><td>Spread / slippage</td><td>SPY ≈ 0.01%: under $0.25/yr</td><td>≈ 0.05% per trade: ≈ $1.30/yr</td></tr>
+<tr><td>Data, platform, hosting</td><td colspan="2">$0: Alpaca free data, GitHub Actions free tier</td></tr>
+<tr><td>Deposits / withdrawals</td><td colspan="2">ACH free; wires $25</td></tr>
+<tr><td><b>Total</b></td><td><b>&lt; 0.5% a year</b></td><td><b>≈ 4% of the crypto sleeve a year</b></td></tr>
+</tbody></table></div>
+<p><b>Options bot:</b> $0 commission at Alpaca, plus pass-through regulatory and clearing fees of a few cents per contract (see Alpaca's fee schedule). The bigger cost is the bid-ask spread: SPY options are among the most liquid in the world, but a two-leg spread still gives up roughly $0.05–0.10 per spread each way, which the model includes. About 18 spreads a year means roughly $2–4 per contract per year in costs.</p>
+<p>The crypto fee drag is real, and already included in the backtest. Switching to limit orders (0.15% maker fee) would cut it by about 40%; that's a good first project with Claude Code once paper trading works.</p>
+
+<h2 id="taxes">Taxes: federal + California</h2>
+<div class="callout warn"><p>General information, not tax advice. With amounts this small the dollars are tiny, but the paperwork isn't, so get it right from day one.</p></div>
+<h3>How your gains are taxed</h3>
+<ul>
+<li><b>Short-term (held 1 year or less):</b> almost every bot trade. Taxed as ordinary income. Federal 2026 single brackets: 10% to $12,400, 12% to $50,400, 22% to $105,700, 24% to $201,775. No FICA/payroll tax on trading gains.</li>
+<li><b>California taxes all capital gains as ordinary income</b>, short or long term: 1% to 9.3% for most incomes (9.3% from about $75,200 taxable), up to 13.3% above $1M.</li>
+<li><b>Example (illustrative income):</b> at $60,000 taxable income you're in the 22% federal and 8% California brackets, so each $100 of bot profit costs about <b>$30</b> in tax.</li>
+<li><b>Losses</b> offset gains first; beyond that, up to $3,000 a year can offset wages (federal and California), and the rest carries forward.</li>
+</ul>
+<h3>Wash sales (stocks only)</h3>
+<p>If you sell SPY at a loss and buy SPY again within 30 days, the loss is disallowed for now and added to the cost of the new shares. The RSI(2) sleeve will trigger this regularly. You don't lose the deduction permanently; it's deferred until you finally sell. Alpaca's 1099-B tracks it for you. Watch late December: a loss sale followed by a January rebuy pushes that loss into the next tax year.</p>
+<h3>Options</h3>
+<ul>
+<li>SPY options are equity options, so gains and losses are short-term capital gains (ordinary income rates), reported on your 1099-B. Index options like SPX and XSP get a 60% long-term / 40% short-term split under Section 1256, but Alpaca doesn't offer index options.</li>
+<li>A spread that's closed counts as two trades (one per leg). Assignment folds the option's premium into the stock's cost basis.</li>
+<li>Wash-sale rules can apply between options and the underlying ETF (for example, a loss on SPY shares with a new short put on SPY within 30 days). Alpaca's 1099-B handles what it can; tax software imports it.</li>
+</ul>
+<h3>Crypto</h3>
+<ul>
+<li>The IRS treats crypto as property. Every sale, including a partial rebalance, is a taxable event.</li>
+<li>The wash-sale rule does <b>not</b> apply to crypto as of October 2026. Several bills have proposed changing that; none has passed.</li>
+<li><b>Form 1099-DA:</b> for 2025 trades, brokers reported gross proceeds only. For crypto bought on or after January 1, 2026 and kept at the same broker, they also report cost basis. Keep your crypto at Alpaca so your basis stays "covered".</li>
+<li>Answer "Yes" to the digital-asset question on Form 1040, and report trades on Form 8949 / Schedule D, plus California Schedule D (540).</li>
+</ul>
+<h3>What to do</h3>
+<ol>
+<li>Every spring, download Alpaca's consolidated 1099 (stocks) and 1099-DA (crypto) and import them into tax software. TurboTax, FreeTaxUSA and others accept these files.</li>
+<li>Expect roughly 15–60 stock trades, 75+ small crypto trades per coin, and up to 36 option legs a year. The import handles volume; you don't type them.</li>
+<li>If bot profits ever exceed about $1,000 a year, raise your W-4 withholding at work a little to avoid an underpayment penalty. California follows the same idea.</li>
+<li>A Roth IRA would avoid tax entirely, but Alpaca's API doesn't support IRAs; IBKR does. Consider it once you're managing real money.</li>
+</ol>
+
+<h2 id="risk">Risk controls</h2>
+<p>You've said you accept the risks of options and crypto. These controls make sure a bug or a crash costs you a known amount instead of everything:</p>
+<div class="tbl"><table>
+<thead><tr><th>Control</th><th>Setting</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Paper by default</td><td><code>ALPACA_PAPER=true</code></td><td>Live trading needs this set to false <i>and</i> <code>I_UNDERSTAND_LIVE_RISK=yes</code></td></tr>
+<tr><td>Account loss limit</td><td><code>MAX_LOSS_PCT=0.35</code></td><td>If equity drops 35% below your net deposits, every bot sells and stops. Adjusts automatically as you deposit</td></tr>
+<tr><td>Sleeve sizes</td><td><code>STOCK_PCT</code>, <code>CRYPTO_PCT</code>, <code>OPTIONS_PCT</code></td><td>Each bot only uses its share of equity. Optional <code>*_MAX_USD</code> dollar caps on top</td></tr>
+<tr><td>Options worst case</td><td><code>OPTIONS_RISK_PER_TRADE=0.20</code></td><td>Every spread has a fixed maximum loss; the bot won't open one bigger than this share of its sleeve</td></tr>
+<tr><td>Kill switch</td><td>send <code>kill</code> in ntfy, the <code>kill-all</code> button, or <code>KILL_SWITCH=true</code></td><td>Sells everything the bots and agents manage, including closing option spreads, and pauses trading until you send <code>resume</code></td></tr>
+<tr><td>Agent limits</td><td><code>AGENT_*</code></td><td>Position caps, order caps, automatic stop-losses, spending cap: see <a href="#agents">Claude agents</a></td></tr>
+<tr><td>Data checks</td><td>built in</td><td>Refuses to trade on stale prices, &gt;15% price jumps, missing option quotes, or too little history</td></tr>
+<tr><td>Order limits</td><td><code>MAX_ORDER_PCT=0.60</code>, <code>MIN_TRADE_USD=5</code></td><td>Blocks fat-finger orders and dust trades</td></tr>
+<tr><td>Alerts</td><td><code>NTFY_TOPIC</code></td><td>One push per run after trades fill (with the agent's reasoning), plus any problem. Nothing when nothing happens. Daily summary is optional (<code>DAILY_SUMMARY=true</code>)</td></tr>
+</tbody></table></div>
+<p><b>Your own rules (write them down):</b> never raise risk settings right after a loss; never override a signal by hand; check once a day at most; stop and reassess if live results drift far from the backtest for 3+ months.</p>
+
+<h2 id="setup">Setup on your MacBook</h2>
+<p>Plan on two evenings, then about 10 minutes a week. Everything below happens in the Terminal app (press <kbd>⌘</kbd>+<kbd>Space</kbd>, type "Terminal").</p>
+<ol class="steps">
+<li><b>Open an Alpaca account</b>Sign up at alpaca.markets. A paper account is created instantly. In the dashboard, switch to <i>Paper</i>, use <i>Reset account</i> to set a realistic starting balance (for example $1,000 to match your plan, or keep $100k to watch the options bot work), then open <i>API Keys</i> and generate a key and secret. The secret is shown once. While you're there, apply for options trading (Level 3) on the live account; approval can take a few days.</li>
+<li><b>Install the tools</b>
+<pre>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install python@3.12 git gh
+curl -fsSL https://claude.ai/install.sh | bash</pre>
+The first line installs Homebrew (follow its "Next steps" message to add it to your PATH). Open a new Terminal window and check: <code>python3.12 --version</code>, <code>claude --version</code>. Claude Code needs a paid Claude plan.</li>
+<li><b>Get the code</b>Download <code>trading-bots-v3.zip</code> from this project's files, double-click to unzip, and move the folder to <code>~/Documents/trading-bots</code>. Then: <code>cd ~/Documents/trading-bots</code></li>
+<li><b>Create the environment</b>
+<pre>python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+open -e .env</pre>
+Paste your paper key and secret, set <code>NET_DEPOSITS_OVERRIDE</code> to your paper starting balance, save, close.</li>
+<li><b>Start Claude Code</b>Run <code>claude</code> in the folder. It reads <code>CLAUDE.md</code>, which explains the project rules. Your first prompt: <i>"Run the tests, then run validate.py and explain the results. Update .env with the suggested symbols if they passed."</i></li>
+<li><b>Check the tests</b><code>python -m pytest -q tests</code> should print <code>47 passed</code>. They run offline with fake data and a scripted fake Claude, and cover signals, order sizing, the options bot, the agents' risk gate, stop-losses, news scoring, the Mac runner's schedule, phone commands, the loss limit and the kill switch.</li>
+<li><b>Dry run, then real paper trades</b>
+<pre>DRY_RUN=1 FORCE_RUN=1 python stock_bot.py
+FORCE_RUN=1 OPTIONS_ENABLED=1 DRY_RUN=1 python options_bot.py
+python crypto_bot.py
+python summary.py</pre>
+Each prints what it decided and why. Check the orders appear in Alpaca's paper dashboard.</li>
+<li><b>Put it on GitHub (private)</b>
+<pre>gh auth login
+git init &amp;&amp; git add . &amp;&amp; git commit -m "Trading bots"
+gh repo create trading-bots --private --source=. --push</pre>
+<code>.env</code> is in <code>.gitignore</code>, so your keys stay on your Mac.</li>
+<li><b>Try the agents by hand</b>Make sure you've logged in to Claude Code once (run <code>claude</code>), then:
+<pre>python news.py                       # scores the latest headlines
+python market.py stocks | head -60   # the whole-market scan the agent sees
+python agent.py stock "first test"   # one agent run (paper account)
+python agent.py crypto "first test"</pre>
+Read the summary it prints and check any orders in Alpaca's paper dashboard.</li>
+<li><b>Turn on the always-on runner</b><code>bash mac/install.sh</code>, as described in <a href="#mac">Always-on Mac</a>. From now on the Mac runs everything.</li>
+<li><b>Optional cloud backup</b>On github.com open your repo's <i>Settings → Secrets and variables → Actions</i>. Add <b>secrets</b> <code>ALPACA_API_KEY</code>, <code>ALPACA_SECRET_KEY</code>, <code>NTFY_TOPIC</code>. Add <b>variables</b> <code>NET_DEPOSITS_OVERRIDE</code> (paper balance) and, if you want, <code>OPTIONS_ENABLED=true</code>, <code>STOCK_RSI2_SYMBOLS</code>, <code>CRYPTO_SYMBOLS</code>. Add the variable <code>RUNNER=mac</code> so the cloud schedule stays off while the Mac runs. Then open the <i>Actions</i> tab, enable workflows, and run <i>trading-bots</i> with "summary" to check the backup works. (Without the Mac, GitHub can run the rules bots on its own: just leave <code>RUNNER</code> unset. The agents need the Mac.)</li>
+<li><b>Paper trade for 3 months</b>Let it run. Read the trade pushes and send <code>status</code> now and then. Once a week, open the Alpaca app and check positions match the alerts.</li>
+</ol>
+
+<h2 id="iphone">Running it from your iPhone</h2>
+<div class="tbl"><table>
+<thead><tr><th>App (free)</th><th>What you use it for</th></tr></thead>
+<tbody>
+<tr><td><b>ntfy</b></td><td>Pushes: one per run after trades fill (with the agent's reasoning) and any problem. <b>Commands:</b> subscribe to your <code>CONTROL_TOPIC</code> too, and publish a message to it: <code>status</code> (equity, positions, Claude spend), <code>pause</code> / <code>pause stock</code> / <code>pause crypto</code>, <code>resume</code>, <code>kill</code> (sell everything and pause), <code>run stock</code> / <code>run crypto</code> (agent check-in now), <code>help</code>. Stop-losses keep running while paused. In the app, tap + and subscribe to the same long random topic name you put in <code>NTFY_TOPIC</code> (treat it like a password: anyone who knows it can read your alerts).</td></tr>
+<tr><td><b>GitHub</b></td><td>Backup if the Mac is off: Repo → Actions → trading-bots → <i>Run workflow</i>. Choose <b>summary</b> for an instant status push, <b>kill-all</b> to sell everything now, or a single bot to rerun it. Green check / red X shows each day's runs. To pause permanently, add the variable <code>KILL_SWITCH=true</code> in the repo settings (works in Safari too).</td></tr>
+<tr><td><b>Alpaca</b></td><td>See positions, orders and P&amp;L; make ACH deposits; close a position by hand in an emergency.</td></tr>
+<tr><td><b>Claude</b></td><td>Ask questions about an alert or a log from your phone. Real code changes are easier from the Mac with Claude Code.</td></tr>
+</tbody></table></div>
+<p><b>A daily rhythm:</b> read trade pushes as they come; each says what the agent did and why. If a red "Bot problem" push arrives, open Claude Code on your Mac that evening: <i>"Read logs/runner.log and tell me what went wrong. Fix it."</i> Trade history is in <code>logs/trades.csv</code>; every agent decision (including "did nothing") is in the journal in <code>logs/state.db</code>, which Claude Code can read for you: <i>"Summarize the stock agent's journal this week and grade its decisions."</i></p>
+
+<h2 id="hosting">Hosting options</h2>
+<div class="tbl"><table>
+<thead><tr><th>Option</th><th>Cost</th><th>Pros</th><th>Cons</th></tr></thead>
+<tbody>
+<tr class="pick"><td><b>Your MacBook, always on</b> (v3)</td><td>Free (uses your Claude plan)</td><td>Runs all day: news, wake-ups, stop-losses, agents. Exact timing</td><td>Must stay plugged in, awake and logged in; set up a health check so you know if it isn't</td></tr>
+<tr><td><b>GitHub Actions</b> (included)</td><td>Free (private repos get 2,000 min/month; you'll use ~150)</td><td>Nothing to keep running, logs for every run, secrets stored safely</td><td>Rules bots only (no agents, no news). Runs can start 5–30 min late. Good backup</td></tr>
+
+<tr><td>Small cloud server (Hetzner, DigitalOcean)</td><td>$4–6/month</td><td>Exact timing, always on</td><td>You maintain a Linux box; costs eat a real share of returns on $400</td></tr>
+</tbody></table></div>
+<p>The rules bots are stateless: each run reads prices and your current position, then decides, so a missed run just trades a day later. The agents keep their notes in <code>logs/state.db</code> on the Mac; back that file up if you move machines.</p>
+
+<h2 id="claude">Working with Claude Code</h2>
+<p>Open a terminal in the folder and run <code>claude</code>. The repo includes a <code>CLAUDE.md</code> that tells Claude the house rules: one source of truth for signals, judge changes only on out-of-sample data, keep the safety rails, run tests before committing. Prompts that work well:</p>
+<ul>
+<li>"Run validate.py and set my symbols to the ones that passed."</li>
+<li>"Explain what <code>strategies.py</code> does line by line, like I'm new to Python."</li>
+<li>"Run all three bots in dry-run mode and explain today's decisions."</li>
+<li>"Check my last options paper fill: did the credit sign work? Fix OPTIONS_CREDIT_IS_NEGATIVE if not."</li>
+<li>"Switch the crypto bot to limit orders at the mid price that fall back to market after 2 minutes. Add tests. Show me the fee savings in a backtest."</li>
+<li>"Add a weekly push comparing my P&amp;L to just holding SPY and BTC."</li>
+<li>"Once my paper account has 3 months of options trades, compare actual fills to the model's assumed $0.10 slippage."</li>
+<li>"The Actions run failed. Read the log and fix it."</li>
+<li>"Grade the agents: compare each agent's trades this month with what the momentum ranking alone would have done, and with holding SPY/BTC."</li>
+<li>"The stock agent keeps buying stocks that are already up 20% on the day. Tighten its instructions and add a test."</li>
+<li>"Show me what Claude cost this month by agent and model, and what switching news scoring to Haiku would save."</li>
+</ul>
+<p>Be suspicious of any change that improves the in-sample backtest a lot. Ask Claude: "What's the out-of-sample result, and how many variations did we try?"</p>
+
+<h2 id="golive">Going live checklist</h2>
+<p>Go live only when all of these are true. Your roadmap targets month 4.</p>
+<ul>
+<li>3+ months of paper trading with no failed runs you didn't understand, including at least a few closed option spreads.</li>
+<li>Paper trades match what the backtest logic says should have happened on those days.</li>
+<li>You've read the tax section and know where your 1099s will come from.</li>
+<li>You have an emergency fund separate from this money.</li>
+<li>Agents: you've read their weekly journals, their trades made sense, and their paper results beat or roughly matched holding SPY/BTC after Claude costs. If not, set <code>AGENT_STOCK_PCT=0</code> / <code>AGENT_CRYPTO_PCT=0</code> and keep them on paper.</li>
+</ul>
+<p><b>Then:</b> fund the live Alpaca account by ACH. Create <i>live</i> API keys and put them in <code>.env</code> on the Mac (and the GitHub secrets, for the backup). Set <code>ALPACA_PAPER=false</code>, <code>I_UNDERSTAND_LIVE_RISK=yes</code>, and delete <code>NET_DEPOSITS_OVERRIDE</code> (live accounts read your real deposits). Turn on options only after Level 3 approval and once your equity passes the threshold for your chosen risk setting. Deposit as you like from then on; the bots scale with you.</p>
+<p><b>Stop or rethink if:</b> the stock bot underperforms buy-and-hold by more than 15 points in a rising market for 2 years, the crypto bot's drawdown exceeds −45%, or the options sleeve loses more than 40% (all worse than anything in testing). Each means the market changed or something is broken. For the agents: pause them if a sleeve loses more than 30% or trails holding SPY/BTC by 15+ points over 6 months.</p>
+
+<h2 id="sources">Sources</h2>
+<ul class="sources">
+<li>FINRA, <a href="https://www.finra.org/compliance-tools/weekly-archive/04152026" target="_blank" rel="noopener">Intraday margin standards replace day-trading requirements</a> (Apr 2026); <a href="https://www.tradestation.com/insights/2026/05/06/day-trade-rule-change/" target="_blank" rel="noopener">TradeStation summary</a></li>
+<li>Alpaca: <a href="https://docs.alpaca.markets/docs/crypto-fees" target="_blank" rel="noopener">crypto fee tiers</a>, <a href="https://alpaca.markets/support/alpaca-cryptocurrency" target="_blank" rel="noopener">crypto state availability</a>, <a href="https://docs.alpaca.markets/docs/crypto-orders" target="_blank" rel="noopener">crypto orders</a>, <a href="https://brokerchooser.com/broker-reviews/alpaca-trading-review/alpaca-trading-fees" target="_blank" rel="noopener">fee review</a></li>
+<li><a href="https://investingintheweb.com/brokers/best-api-brokers/" target="_blank" rel="noopener">API broker comparison 2026</a>; <a href="https://coinbureau.com/analysis/kraken-vs-coinbase" target="_blank" rel="noopener">Kraken vs Coinbase fees</a>; <a href="https://www.datawallet.com/crypto/kraken-fees-explained" target="_blank" rel="noopener">Kraken fees</a>; <a href="https://cryptodaily.co.uk/2026/09/coinbase-advanced-fees-usdc-vip-tiers" target="_blank" rel="noopener">Coinbase Advanced Sept 2026 changes</a></li>
+<li>SEC <a href="https://www.sec.gov/rules-regulations/fee-rate-advisories/2026-2" target="_blank" rel="noopener">Section 31 fee rate FY2026</a></li>
+<li>California DFPI, <a href="https://dfpi.ca.gov/regulated-industries/digital-financial-assets/digital-financial-assets-law-licensee-applications/" target="_blank" rel="noopener">DFAL licensee applications</a>; <a href="https://bex.co/blog/2026/03/14/california-dfal-licensing-crypto-regulation-americas-largest-state" target="_blank" rel="noopener">DFAL overview</a></li>
+<li>Tax: <a href="https://taxfoundation.org/data/all/federal/2026-tax-brackets/" target="_blank" rel="noopener">2026 federal brackets</a>; <a href="https://ustax.tools/california-tax-brackets-2026/" target="_blank" rel="noopener">California 2026 brackets</a>; <a href="https://chainwisecpa.com/crypto-wash-sale-2026/" target="_blank" rel="noopener">crypto wash sales 2026</a>; <a href="https://tax.thomsonreuters.com/news/form-1099-da-debut-will-test-broker-taxpayer-readiness-in-transition-year/" target="_blank" rel="noopener">Form 1099-DA transition</a>; <a href="https://www.irs.gov/instructions/i1099da" target="_blank" rel="noopener">IRS 1099-DA instructions</a></li>
+<li>Research: Faber (2007) A Quantitative Approach to Tactical Asset Allocation; Moskowitz, Ooi &amp; Pedersen (2012) Time Series Momentum, JFE; Hurst, Ooi &amp; Pedersen (2017) A Century of Evidence on Trend-Following Investing; Connors &amp; Alvarez (2008) Short Term Trading Strategies That Work; Liu &amp; Tsyvinski (2021) Risks and Returns of Cryptocurrency, RFS; Moreira &amp; Muir (2017) Volatility-Managed Portfolios, JF; McLean &amp; Pontiff (2016) Does Academic Research Destroy Stock Return Predictability?, JF; Bailey, Borwein, López de Prado &amp; Zhu (2014) Pseudo-Mathematics and Financial Charlatanism, Notices of the AMS; Barber, Lee, Liu &amp; Odean (2014) The Cross-Section of Speculator Skill; Chague, De-Losso &amp; Giovannetti (2019) Day Trading for a Living?; Jegadeesh &amp; Titman (1993) Returns to Buying Winners and Selling Losers, JF; Barroso &amp; Santa-Clara (2015) Momentum Has Its Moments, JFE; Lopez-Lira &amp; Tang, Can ChatGPT Forecast Stock Price Movements? Return Predictability and Large Language Models; Gao, Jiang &amp; Yan (2025) on look-ahead bias in LLM return forecasts</li>
+<li>Alpaca <a href="https://docs.alpaca.markets/docs/historical-news-data" target="_blank" rel="noopener">news API</a> (Benzinga, 2015–today, real time) and <a href="https://docs.alpaca.markets/reference/mostactives-1" target="_blank" rel="noopener">screener</a>; Anthropic <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">API pricing</a>; Apple <a href="https://support.apple.com/guide/mac-help/set-sleep-and-wake-settings-mchle41a6ccd/mac" target="_blank" rel="noopener">Mac sleep settings</a></li>
+<li>Data: <a href="https://github.com/SteelCerberus/us-market-data" target="_blank" rel="noopener">SteelCerberus/us-market-data</a> (S&amp;P 500 1885–2025), <a href="https://github.com/ff137/bitstamp-btcusd-minute-data" target="_blank" rel="noopener">ff137/bitstamp-btcusd-minute-data</a> (BTC 2012–2026)</li>
+<li>Claude Code <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">installation docs</a></li>
+</ul>
+<p class="small">Backtests are hypothetical and past results don't predict future ones. This page is education, not financial or tax advice.</p>
+</main>
+</div>
+
+<script>
+const DATA = {"stock":{"d":["2000-01","2000-02","2000-03","2000-04","2000-05","2000-06","2000-07","2000-08","2000-09","2000-10","2000-11","2000-12","2001-01","2001-02","2001-03","2001-04","2001-05","2001-06","2001-07","2001-08","2001-09","2001-10","2001-11","2001-12","2002-01","2002-02","2002-03","2002-04","2002-05","2002-06","2002-07","2002-08","2002-09","2002-10","2002-11","2002-12","2003-01","2003-02","2003-03","2003-04","2003-05","2003-06","2003-07","2003-08","2003-09","2003-10","2003-11","2003-12","2004-01","2004-02","2004-03","2004-04","2004-05","2004-06","2004-07","2004-08","2004-09","2004-10","2004-11","2004-12","2005-01","2005-02","2005-03","2005-04","2005-05","2005-06","2005-07","2005-08","2005-09","2005-10","2005-11","2005-12","2006-01","2006-02","2006-03","2006-04","2006-05","2006-06","2006-07","2006-08","2006-09","2006-10","2006-11","2006-12","2007-01","2007-02","2007-03","2007-04","2007-05","2007-06","2007-07","2007-08","2007-09","2007-10","2007-11","2007-12","2008-01","2008-02","2008-03","2008-04","2008-05","2008-06","2008-07","2008-08","2008-09","2008-10","2008-11","2008-12","2009-01","2009-02","2009-03","2009-04","2009-05","2009-06","2009-07","2009-08","2009-09","2009-10","2009-11","2009-12","2010-01","2010-02","2010-03","2010-04","2010-05","2010-06","2010-07","2010-08","2010-09","2010-10","2010-11","2010-12","2011-01","2011-02","2011-03","2011-04","2011-05","2011-06","2011-07","2011-08","2011-09","2011-10","2011-11","2011-12","2012-01","2012-02","2012-03","2012-04","2012-05","2012-06","2012-07","2012-08","2012-09","2012-10","2012-11","2012-12","2013-01","2013-02","2013-03","2013-04","2013-05","2013-06","2013-07","2013-08","2013-09","2013-10","2013-11","2013-12","2014-01","2014-02","2014-03","2014-04","2014-05","2014-06","2014-07","2014-08","2014-09","2014-10","2014-11","2014-12","2015-01","2015-02","2015-03","2015-04","2015-05","2015-06","2015-07","2015-08","2015-09","2015-10","2015-11","2015-12","2016-01","2016-02","2016-03","2016-04","2016-05","2016-06","2016-07","2016-08","2016-09","2016-10","2016-11","2016-12","2017-01","2017-02","2017-03","2017-04","2017-05","2017-06","2017-07","2017-08","2017-09","2017-10","2017-11","2017-12","2018-01","2018-02","2018-03","2018-04","2018-05","2018-06","2018-07","2018-08","2018-09","2018-10","2018-11","2018-12","2019-01","2019-02","2019-03","2019-04","2019-05","2019-06","2019-07","2019-08","2019-09","2019-10","2019-11","2019-12","2020-01","2020-02","2020-03","2020-04","2020-05","2020-06","2020-07","2020-08","2020-09","2020-10","2020-11","2020-12","2021-01","2021-02","2021-03","2021-04","2021-05","2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"],"BuyHold":[0.925,0.908,1.048,0.99,0.942,0.988,0.972,1.035,0.996,0.955,0.925,0.903,0.935,0.86,0.79,0.868,0.884,0.85,0.836,0.823,0.725,0.766,0.803,0.808,0.791,0.764,0.8,0.75,0.76,0.694,0.6,0.663,0.583,0.635,0.658,0.619,0.611,0.603,0.616,0.641,0.666,0.697,0.715,0.724,0.716,0.742,0.762,0.789,0.823,0.827,0.802,0.826,0.815,0.825,0.789,0.808,0.811,0.824,0.864,0.885,0.861,0.89,0.862,0.851,0.885,0.879,0.914,0.892,0.901,0.889,0.944,0.946,0.959,0.966,0.975,0.985,0.962,0.936,0.963,0.977,0.994,1.042,1.061,1.076,1.08,1.104,1.094,1.141,1.157,1.154,1.112,1.137,1.175,1.183,1.11,1.14,1.03,1.05,1.023,1.086,1.071,0.997,0.981,1.007,0.95,0.684,0.708,0.691,0.659,0.614,0.651,0.692,0.739,0.737,0.787,0.83,0.842,0.872,0.884,0.912,0.871,0.898,0.949,0.992,0.891,0.883,0.903,0.874,0.944,0.975,0.977,1.038,1.056,1.094,1.09,1.111,1.109,1.058,1.079,0.984,0.952,1.079,0.976,1.067,1.113,1.156,1.184,1.19,1.12,1.137,1.182,1.206,1.234,1.211,1.211,1.208,1.296,1.311,1.358,1.372,1.433,1.398,1.473,1.452,1.479,1.541,1.583,1.618,1.575,1.619,1.64,1.647,1.683,1.74,1.757,1.783,1.766,1.753,1.849,1.871,1.84,1.896,1.855,1.908,1.903,1.901,1.884,1.805,1.756,1.89,1.908,1.884,1.775,1.787,1.87,1.924,1.936,1.881,2.01,2.011,2.009,1.977,2.061,2.112,2.142,2.215,2.198,2.237,2.272,2.296,2.332,2.31,2.367,2.446,2.471,2.546,2.734,2.62,2.471,2.553,2.606,2.643,2.707,2.766,2.809,2.564,2.544,2.408,2.583,2.713,2.758,2.865,2.761,2.874,2.963,2.795,2.911,2.972,3.065,3.198,3.256,3.303,2.525,2.819,3.032,3.002,3.211,3.508,3.303,3.474,3.654,3.723,3.734,3.838,4.008,4.218,4.252,4.332,4.468,4.572,4.522,4.679,4.676,4.811,4.518,4.475,4.643,4.369,4.259,4.018,4.243,4.175,3.805,4.023,4.161,3.978,4.215,4.118,4.127,4.338,4.38,4.535,4.783,4.606,4.521,4.314,4.783,5.013,5.141,5.357,5.534,5.377,5.602,5.777,5.779,5.967,6.084,6.165,6.34,6.356,6.495,6.409,5.954,5.9,6.205,6.608,6.847,6.932,7.132,7.298,7.364,7.356],"Trend":[0.925,0.919,1.022,0.933,0.887,0.901,0.886,0.944,0.892,0.898,0.902,0.907,0.91,0.914,0.917,0.92,0.923,0.925,0.928,0.931,0.933,0.935,0.936,0.938,0.939,0.94,0.925,0.914,0.915,0.917,0.918,0.919,0.921,0.922,0.923,0.924,0.924,0.925,0.926,0.931,0.967,1.011,1.038,1.05,1.039,1.077,1.107,1.146,1.195,1.201,1.164,1.199,1.183,1.197,1.152,1.154,1.137,1.107,1.157,1.186,1.153,1.192,1.155,1.125,1.152,1.145,1.19,1.162,1.173,1.148,1.198,1.201,1.218,1.226,1.239,1.251,1.221,1.181,1.149,1.161,1.181,1.239,1.261,1.28,1.284,1.313,1.301,1.357,1.376,1.372,1.322,1.304,1.311,1.32,1.248,1.218,1.221,1.223,1.224,1.225,1.227,1.229,1.231,1.233,1.234,1.235,1.235,1.235,1.235,1.235,1.236,1.236,1.236,1.166,1.245,1.313,1.333,1.379,1.398,1.443,1.378,1.42,1.502,1.569,1.384,1.385,1.385,1.339,1.366,1.41,1.413,1.502,1.527,1.582,1.577,1.607,1.604,1.531,1.561,1.514,1.514,1.514,1.514,1.514,1.565,1.625,1.665,1.674,1.575,1.599,1.662,1.696,1.734,1.703,1.637,1.632,1.751,1.77,1.834,1.853,1.935,1.888,1.99,1.961,1.998,2.081,2.138,2.186,2.127,2.187,2.215,2.225,2.273,2.35,2.373,2.409,2.386,2.285,2.41,2.438,2.397,2.47,2.417,2.486,2.48,2.477,2.455,2.407,2.407,2.407,2.339,2.252,2.252,2.253,2.247,2.312,2.326,2.26,2.33,2.332,2.329,2.292,2.389,2.449,2.484,2.568,2.548,2.594,2.634,2.662,2.703,2.678,2.745,2.836,2.865,2.951,3.169,3.038,2.865,2.96,3.022,3.064,3.139,3.207,3.257,2.973,2.885,2.794,2.799,2.819,2.866,2.977,2.869,2.987,3.079,2.904,3.025,3.089,3.185,3.323,3.383,3.432,2.821,2.821,2.828,2.8,2.995,3.272,3.08,3.24,3.408,3.472,3.482,3.579,3.738,3.934,3.966,4.041,4.167,4.265,4.218,4.364,4.361,4.487,4.141,4.037,4.038,3.922,3.925,3.929,3.937,3.946,3.955,3.969,3.981,3.995,4.056,3.963,3.829,4.024,4.063,4.207,4.437,4.272,4.194,4.069,4.302,4.509,4.624,4.818,4.978,4.837,5.038,5.196,5.198,5.367,5.472,5.545,5.703,5.717,5.842,5.764,5.396,5.413,5.384,5.734,5.941,6.015,6.189,6.333,6.39,6.383],"Blend":[0.967,0.984,1.041,0.998,0.968,0.998,0.997,1.031,1.008,1.014,1.019,1.024,1.028,1.032,1.036,1.04,1.043,1.045,1.049,1.052,1.054,1.056,1.057,1.059,1.06,1.062,1.054,1.049,1.05,1.052,1.053,1.055,1.056,1.058,1.059,1.06,1.061,1.062,1.063,1.066,1.092,1.113,1.132,1.148,1.14,1.173,1.199,1.221,1.247,1.253,1.242,1.262,1.257,1.268,1.247,1.249,1.241,1.225,1.254,1.28,1.259,1.29,1.265,1.251,1.268,1.26,1.293,1.279,1.288,1.276,1.306,1.32,1.339,1.346,1.355,1.378,1.337,1.317,1.302,1.312,1.326,1.361,1.381,1.412,1.417,1.438,1.404,1.446,1.461,1.463,1.418,1.422,1.429,1.444,1.406,1.392,1.395,1.397,1.399,1.4,1.402,1.404,1.406,1.409,1.41,1.411,1.411,1.411,1.411,1.411,1.412,1.412,1.412,1.379,1.426,1.465,1.489,1.545,1.558,1.583,1.546,1.582,1.626,1.663,1.587,1.587,1.587,1.561,1.577,1.602,1.602,1.652,1.666,1.704,1.728,1.741,1.743,1.696,1.704,1.601,1.601,1.601,1.601,1.601,1.627,1.659,1.695,1.714,1.631,1.644,1.699,1.721,1.748,1.731,1.697,1.686,1.761,1.77,1.802,1.812,1.852,1.857,1.907,1.89,1.907,1.948,1.975,2.008,1.981,2.028,2.047,2.066,2.088,2.135,2.145,2.139,2.128,2.075,2.131,2.136,2.132,2.173,2.146,2.189,2.207,2.217,2.205,2.19,2.19,2.19,2.144,2.104,2.105,2.105,2.103,2.133,2.137,2.109,2.141,2.154,2.167,2.15,2.198,2.225,2.249,2.288,2.279,2.309,2.338,2.36,2.389,2.391,2.422,2.467,2.49,2.53,2.623,2.52,2.41,2.49,2.518,2.549,2.565,2.602,2.627,2.472,2.437,2.402,2.406,2.417,2.443,2.492,2.441,2.502,2.542,2.454,2.494,2.553,2.594,2.661,2.687,2.724,2.42,2.42,2.423,2.413,2.496,2.61,2.544,2.617,2.722,2.766,2.753,2.85,2.914,2.989,3.041,3.099,3.157,3.208,3.217,3.286,3.285,3.358,3.177,3.138,3.139,3.094,3.097,3.1,3.107,3.113,3.12,3.131,3.141,3.152,3.182,3.139,3.096,3.204,3.288,3.351,3.45,3.394,3.348,3.255,3.383,3.472,3.555,3.637,3.707,3.658,3.741,3.824,3.856,3.974,4.051,4.088,4.198,4.247,4.318,4.297,4.143,4.156,4.137,4.321,4.405,4.452,4.522,4.621,4.658,4.697]},"crypto":{"d":["2021-01-03","2021-01-10","2021-01-17","2021-01-24","2021-01-31","2021-02-07","2021-02-14","2021-02-21","2021-02-28","2021-03-07","2021-03-14","2021-03-21","2021-03-28","2021-04-04","2021-04-11","2021-04-18","2021-04-25","2021-05-02","2021-05-09","2021-05-16","2021-05-23","2021-05-30","2021-06-06","2021-06-13","2021-06-20","2021-06-27","2021-07-04","2021-07-11","2021-07-18","2021-07-25","2021-08-01","2021-08-08","2021-08-15","2021-08-22","2021-08-29","2021-09-05","2021-09-12","2021-09-19","2021-09-26","2021-10-03","2021-10-10","2021-10-17","2021-10-24","2021-10-31","2021-11-07","2021-11-14","2021-11-21","2021-11-28","2021-12-05","2021-12-12","2021-12-19","2021-12-26","2022-01-02","2022-01-09","2022-01-16","2022-01-23","2022-01-30","2022-02-06","2022-02-13","2022-02-20","2022-02-27","2022-03-06","2022-03-13","2022-03-20","2022-03-27","2022-04-03","2022-04-10","2022-04-17","2022-04-24","2022-05-01","2022-05-08","2022-05-15","2022-05-22","2022-05-29","2022-06-05","2022-06-12","2022-06-19","2022-06-26","2022-07-03","2022-07-10","2022-07-17","2022-07-24","2022-07-31","2022-08-07","2022-08-14","2022-08-21","2022-08-28","2022-09-04","2022-09-11","2022-09-18","2022-09-25","2022-10-02","2022-10-09","2022-10-16","2022-10-23","2022-10-30","2022-11-06","2022-11-13","2022-11-20","2022-11-27","2022-12-04","2022-12-11","2022-12-18","2022-12-25","2023-01-01","2023-01-08","2023-01-15","2023-01-22","2023-01-29","2023-02-05","2023-02-12","2023-02-19","2023-02-26","2023-03-05","2023-03-12","2023-03-19","2023-03-26","2023-04-02","2023-04-09","2023-04-16","2023-04-23","2023-04-30","2023-05-07","2023-05-14","2023-05-21","2023-05-28","2023-06-04","2023-06-11","2023-06-18","2023-06-25","2023-07-02","2023-07-09","2023-07-16","2023-07-23","2023-07-30","2023-08-06","2023-08-13","2023-08-20","2023-08-27","2023-09-03","2023-09-10","2023-09-17","2023-09-24","2023-10-01","2023-10-08","2023-10-15","2023-10-22","2023-10-29","2023-11-05","2023-11-12","2023-11-19","2023-11-26","2023-12-03","2023-12-10","2023-12-17","2023-12-24","2023-12-31","2024-01-07","2024-01-14","2024-01-21","2024-01-28","2024-02-04","2024-02-11","2024-02-18","2024-02-25","2024-03-03","2024-03-10","2024-03-17","2024-03-24","2024-03-31","2024-04-07","2024-04-14","2024-04-21","2024-04-28","2024-05-05","2024-05-12","2024-05-19","2024-05-26","2024-06-02","2024-06-09","2024-06-16","2024-06-23","2024-06-30","2024-07-07","2024-07-14","2024-07-21","2024-07-28","2024-08-04","2024-08-11","2024-08-18","2024-08-25","2024-09-01","2024-09-08","2024-09-15","2024-09-22","2024-09-29","2024-10-06","2024-10-13","2024-10-20","2024-10-27","2024-11-03","2024-11-10","2024-11-17","2024-11-24","2024-12-01","2024-12-08","2024-12-15","2024-12-22","2024-12-29","2025-01-05","2025-01-12","2025-01-19","2025-01-26","2025-02-02","2025-02-09","2025-02-16","2025-02-23","2025-03-02","2025-03-09","2025-03-16","2025-03-23","2025-03-30","2025-04-06","2025-04-13","2025-04-20","2025-04-27","2025-05-04","2025-05-11","2025-05-18","2025-05-25","2025-06-01","2025-06-08","2025-06-15","2025-06-22","2025-06-29","2025-07-06","2025-07-13","2025-07-20","2025-07-27","2025-08-03","2025-08-10","2025-08-17","2025-08-24","2025-08-31","2025-09-07","2025-09-14","2025-09-21","2025-09-28","2025-10-05","2025-10-12","2025-10-19","2025-10-26","2025-11-02","2025-11-09","2025-11-16","2025-11-23","2025-11-30","2025-12-07","2025-12-14","2025-12-21","2025-12-28","2026-01-04","2026-01-11","2026-01-18","2026-01-25","2026-02-01","2026-02-08","2026-02-15","2026-02-22","2026-03-01","2026-03-08","2026-03-15","2026-03-22","2026-03-29","2026-04-05","2026-04-12","2026-04-19","2026-04-26","2026-05-03","2026-05-10","2026-05-17","2026-05-24","2026-05-31","2026-06-07","2026-06-14","2026-06-21","2026-06-28","2026-07-05","2026-07-12","2026-07-19","2026-07-26","2026-08-02","2026-08-09","2026-08-16","2026-08-23","2026-08-30","2026-09-06","2026-09-13","2026-09-20","2026-09-27","2026-10-04","2026-10-11","2026-10-18","2026-10-25"],"BTC hold":[1.142,1.317,1.235,1.114,1.143,1.34,1.678,1.983,1.56,1.758,2.036,1.979,1.924,2.008,2.069,1.941,1.695,1.953,2.011,1.602,1.197,1.231,1.235,1.346,1.228,1.197,1.217,1.182,1.096,1.222,1.374,1.513,1.622,1.7,1.683,1.787,1.588,1.63,1.49,1.664,1.887,2.123,2.101,2.116,2.183,2.26,2.024,1.978,1.706,1.729,1.611,1.752,1.633,1.444,1.487,1.252,1.309,1.463,1.451,1.324,1.301,1.326,1.303,1.422,1.616,1.6,1.453,1.369,1.361,1.328,1.174,1.079,1.044,1.016,1.031,0.917,0.709,0.725,0.665,0.719,0.717,0.779,0.804,0.8,0.839,0.742,0.675,0.69,0.753,0.67,0.649,0.657,0.671,0.664,0.675,0.711,0.721,0.563,0.561,0.566,0.59,0.589,0.578,0.58,0.573,0.59,0.72,0.784,0.819,0.791,0.752,0.838,0.813,0.774,0.765,0.968,0.966,0.972,0.977,1.046,0.952,1.008,0.982,0.929,0.923,0.968,0.936,0.895,0.909,1.051,1.056,1.041,1.043,1.038,1.01,1.002,1.01,0.903,0.9,0.896,0.891,0.915,0.905,0.966,0.963,0.937,1.035,1.191,1.209,1.279,1.291,1.292,1.379,1.51,1.426,1.484,1.458,1.516,1.439,1.433,1.45,1.468,1.666,1.798,1.784,2.178,2.381,2.358,2.317,2.459,2.392,2.268,2.24,2.176,2.208,2.12,2.286,2.362,2.337,2.402,2.298,2.178,2.162,1.926,2.098,2.351,2.355,2.005,2.026,2.015,2.216,1.977,1.892,2.039,2.192,2.263,2.167,2.168,2.38,2.343,2.371,2.774,3.099,3.38,3.356,3.491,3.602,3.28,3.227,3.391,3.259,3.492,3.538,3.369,3.328,3.316,3.32,3.252,2.784,2.847,2.969,2.841,2.702,2.887,2.939,3.234,3.253,3.592,3.674,3.762,3.646,3.649,3.643,3.484,3.738,3.768,4.109,4.047,4.121,3.94,4.115,4.052,3.914,3.734,3.834,3.978,3.977,3.87,4.26,3.97,3.749,3.951,3.812,3.611,3.249,2.994,3.117,3.118,3.041,3.057,3.031,3.156,3.134,3.23,2.986,2.652,2.424,2.373,2.332,2.269,2.276,2.512,2.341,2.275,2.38,2.44,2.546,2.713,2.71,2.835,2.67,2.655,2.537,2.184,2.267,2.181,2.051,2.193,2.199,2.231,2.254,2.19,2.237,2.167,2.681,2.68,2.771,2.649,2.799,2.913,2.984,2.886,2.828,2.878],"Bot":[1.084,1.183,1.14,1.086,1.1,1.171,1.283,1.371,1.252,1.313,1.399,1.381,1.364,1.391,1.418,1.347,1.253,1.337,1.323,1.251,1.202,1.208,1.214,1.214,1.214,1.214,1.214,1.214,1.214,1.214,1.239,1.293,1.335,1.364,1.35,1.393,1.305,1.312,1.225,1.274,1.344,1.424,1.418,1.425,1.457,1.494,1.381,1.363,1.301,1.294,1.284,1.284,1.272,1.272,1.272,1.267,1.267,1.265,1.265,1.252,1.249,1.229,1.229,1.23,1.275,1.263,1.201,1.151,1.145,1.148,1.144,1.144,1.144,1.144,1.144,1.144,1.144,1.144,1.144,1.144,1.142,1.146,1.141,1.142,1.157,1.1,1.086,1.088,1.09,1.07,1.07,1.07,1.06,1.06,1.059,1.073,1.071,1.026,1.026,1.026,1.026,1.025,1.021,1.021,1.015,1.016,1.169,1.271,1.329,1.282,1.225,1.347,1.317,1.267,1.243,1.418,1.418,1.423,1.428,1.482,1.351,1.428,1.386,1.333,1.322,1.35,1.323,1.284,1.279,1.391,1.397,1.381,1.384,1.375,1.344,1.331,1.34,1.293,1.293,1.293,1.293,1.292,1.288,1.3,1.292,1.274,1.373,1.545,1.564,1.638,1.643,1.644,1.746,1.899,1.813,1.868,1.837,1.89,1.824,1.817,1.828,1.836,2.0,2.157,2.14,2.608,2.815,2.809,2.756,2.845,2.806,2.717,2.703,2.664,2.651,2.609,2.646,2.703,2.685,2.724,2.623,2.547,2.482,2.481,2.481,2.51,2.501,2.348,2.325,2.325,2.32,2.251,2.242,2.238,2.269,2.311,2.197,2.171,2.358,2.321,2.348,2.718,2.978,3.163,3.149,3.236,3.323,3.082,3.043,3.14,3.028,3.152,3.188,3.059,2.996,2.958,2.928,2.854,2.784,2.771,2.771,2.771,2.771,2.743,2.737,2.766,2.769,2.987,3.051,3.119,3.03,3.032,3.028,2.92,3.079,3.085,3.346,3.295,3.355,3.208,3.337,3.277,3.161,3.044,3.066,3.101,3.088,3.0,3.245,2.964,2.897,2.937,2.865,2.846,2.846,2.846,2.846,2.846,2.846,2.848,2.842,2.859,2.854,2.874,2.785,2.764,2.764,2.764,2.764,2.764,2.764,2.777,2.725,2.705,2.715,2.73,2.755,2.851,2.846,2.956,2.812,2.777,2.718,2.658,2.658,2.658,2.658,2.664,2.655,2.647,2.656,2.61,2.631,2.6,2.926,2.926,3.012,2.917,3.01,3.131,3.207,3.103,3.04,3.082]}};
+function drawChart(id, dates, series, yearStep){
+  const svg = document.getElementById(id); if(!svg) return;
+  const W=720,H=300,L=46,R=14,T=10,B=28;
+  const all = series.flatMap(s=>s.v);
+  const lo = Math.log(Math.min(...all))-0.06, hi = Math.log(Math.max(...all))+0.04;
+  const x = i => L + (W-L-R) * i/(dates.length-1);
+  const y = v => T + (H-T-B) * (1 - (Math.log(v)-lo)/(hi-lo));
+  const ns='http://www.w3.org/2000/svg';
+  const el=(t,a)=>{const e=document.createElementNS(ns,t);for(const k in a)e.setAttribute(k,a[k]);svg.appendChild(e);return e;};
+  const ticks=[0.5,0.75,1,1.5,2,3,4,5,6,8].filter(v=>Math.log(v)>=lo-0.02&&Math.log(v)<=hi+0.02);
+  for(const v of ticks){
+    el('line',{x1:L,x2:W-R,y1:y(v),y2:y(v),stroke:'var(--rule)','stroke-width':1});
+    const t=el('text',{x:L-8,y:y(v)+4,'text-anchor':'end','font-size':11,'font-family':'var(--mono)',fill:'var(--muted)'}); t.textContent='$'+v;
+  }
+  let lastYear=null;
+  dates.forEach((d,i)=>{const yr=+d.slice(0,4); if(yr!==lastYear && yr%yearStep===0 && d.slice(5,7)<='02'){lastYear=yr;
+    const t=el('text',{x:x(i),y:H-8,'text-anchor':'middle','font-size':11,'font-family':'var(--mono)',fill:'var(--muted)'}); t.textContent=yr;
+    el('line',{x1:x(i),x2:x(i),y1:H-B,y2:H-B+4,stroke:'var(--muted)'});}});
+  el('line',{x1:L,x2:W-R,y1:H-B,y2:H-B,stroke:'var(--muted)','stroke-width':1});
+  for(const s of series){
+    const d=s.v.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ');
+    el('path',{d,fill:'none',stroke:s.c,'stroke-width':s.w||1.8,'stroke-linejoin':'round'});
+    const n=s.v.length-1; el('circle',{cx:x(n),cy:y(s.v[n]),r:3.2,fill:s.c});
+  }
+}
+const S=DATA.stock, Cr=DATA.crypto;
+drawChart('c-stock', S.d, [{v:S.BuyHold,c:'var(--s2)'},{v:S.Trend,c:'var(--s3)'},{v:S.Blend,c:'var(--s1)',w:2.4}], 5);
+drawChart('c-crypto', Cr.d, [{v:Cr['BTC hold'],c:'var(--s2)'},{v:Cr.Bot,c:'var(--s1)',w:2.4}], 1);
+</script>

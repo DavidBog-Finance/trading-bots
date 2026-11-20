@@ -1,0 +1,107 @@
+# Home services for the home server (SER9 Pro, or the Aero).
+# The GPU part lives in docker-compose.amd.yml / docker-compose.nvidia.yml; install.sh copies the right one
+# to docker-compose.override.yml, which Docker merges in automatically. Web pages are bound to the Tailscale address only (TS_IP),
+# so they open from your iPhone/Mac on Tailscale and are invisible to everything else.
+# Start/update: docker compose --env-file services.env up -d   (or manage them in Dockge)
+name: home
+
+services:
+  ollama:                      # local AI engine
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports: ["127.0.0.1:11434:11434", "${TS_IP}:11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    environment:
+      - OLLAMA_KEEP_ALIVE=10m        # unload the model after 10 idle minutes: GPU goes quiet
+      - OLLAMA_MAX_LOADED_MODELS=1
+
+  open-webui:                  # private chat on your phone, also the local-AI playground
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports: ["${TS_IP}:3001:8080"]
+    environment: [OLLAMA_BASE_URL=http://ollama:11434]
+    volumes: ["open-webui:/app/backend/data"]
+    depends_on: [ollama]
+
+  adguard:                     # ad and tracker blocking for the whole house
+    image: adguard/adguardhome:latest
+    container_name: adguard
+    restart: unless-stopped
+    network_mode: host         # serves DNS on port 53; admin page on :3000
+    volumes: ["adguard-work:/opt/adguardhome/work", "adguard-conf:/opt/adguardhome/conf"]
+
+  uptime-kuma:                 # is everything up? pushes to ntfy when not
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports: ["${TS_IP}:3002:3001"]
+    volumes: ["uptime-kuma:/app/data"]
+
+  dockge:                      # manage these containers from a web page
+    image: louislam/dockge:1
+    container_name: dockge
+    restart: unless-stopped
+    ports: ["${TS_IP}:5001:5001"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock", "dockge:/app/data", "/opt/stacks:/opt/stacks"]
+    environment: [DOCKGE_STACKS_DIR=/opt/stacks]
+
+  n8n:                         # automations, scrapers and digests
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    ports: ["${TS_IP}:5678:5678"]
+    environment:
+      - GENERIC_TIMEZONE=America/Los_Angeles
+      - N8N_SECURE_COOKIE=false        # reached over Tailscale's encrypted link, not the internet
+    volumes: ["n8n:/home/node/.n8n"]
+
+  miniflux-db:
+    image: postgres:16-alpine
+    container_name: miniflux-db
+    restart: unless-stopped
+    environment: [POSTGRES_USER=miniflux, "POSTGRES_PASSWORD=${MINIFLUX_DB_PASSWORD}", POSTGRES_DB=miniflux]
+    volumes: ["miniflux-db:/var/lib/postgresql/data"]
+
+  miniflux:                    # RSS reader
+    image: miniflux/miniflux:latest
+    container_name: miniflux
+    restart: unless-stopped
+    ports: ["${TS_IP}:8081:8080"]
+    depends_on: [miniflux-db]
+    environment:
+      - "DATABASE_URL=postgres://miniflux:${MINIFLUX_DB_PASSWORD}@miniflux-db/miniflux?sslmode=disable"
+      - RUN_MIGRATIONS=1
+      - CREATE_ADMIN=1
+      - ADMIN_USERNAME=david
+      - "ADMIN_PASSWORD=${MINIFLUX_ADMIN_PASSWORD}"
+
+  stirling-pdf:                # PDF tools that never upload your files anywhere
+    image: stirlingtools/stirling-pdf:latest
+    container_name: stirling-pdf
+    restart: unless-stopped
+    ports: ["${TS_IP}:8082:8080"]
+
+  timemachine:                 # backup disk for your MacBook
+    image: mbentley/timemachine:smb
+    container_name: timemachine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TM_USERNAME=timemachine
+      - "PASSWORD=${TIMEMACHINE_PASSWORD}"
+      - SHARE_NAME=TimeMachine
+      - VOLUME_SIZE_LIMIT=400 G      # leaves the rest of the 1 TB for data and models
+    volumes: ["/srv/timemachine:/opt/timemachine"]
+    tmpfs: ["/run/samba"]
+
+volumes:
+  ollama: {}
+  open-webui: {}
+  adguard-work: {}
+  adguard-conf: {}
+  uptime-kuma: {}
+  dockge: {}
+  n8n: {}
+  miniflux-db: {}

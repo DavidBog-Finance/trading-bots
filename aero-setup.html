@@ -1,0 +1,134 @@
+<title>Aero Setup Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a load meter up top, then tiers as sections with job tables */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --rule:#d9ddda;
+  --accent:#1f6f5c; --accent-soft:#e2efe9; --track:#e6e9e7;
+  --good:#1f7a4a; --warn:#a86a00; --bad:#b3362c;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --track:#262e2b; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body)}
+.wrap{max-width:880px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:40px}
+h1,h2,h3{font-family:var(--display);line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,6vw,2.9rem)} h2{font-size:1.65rem} h3{font-size:1.2rem}
+p{margin:0;max-width:70ch}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header,section{display:grid;gap:14px}
+.lede{color:var(--muted);font-size:1.08rem}
+.verdict{background:var(--accent-soft);border-left:4px solid var(--accent);padding:20px 22px;display:grid;gap:10px;border-radius:2px}
+.verdict ol{margin:0}
+.meters{display:grid;gap:12px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:18px}
+.meter{display:grid;grid-template-columns:150px 1fr 120px;gap:12px;align-items:center;font-size:.92rem}
+.bar{height:10px;background:var(--track);border-radius:99px;position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:99px}
+.meter .num{text-align:right}
+@media (max-width:560px){.meter{grid-template-columns:1fr;gap:4px}.meter .num{text-align:left}}
+.tbl{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:.93rem}
+th,td{padding:10px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--rule)}
+tr:last-child td{border-bottom:0}
+thead th{font:600 .76rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--bg)}
+td:first-child{font-weight:600;width:22%}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 .72rem var(--mono);letter-spacing:.04em;padding:1px 8px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}
+ol,ul{margin:0;padding-left:1.3em;display:grid;gap:8px;max-width:74ch}
+code{font:.88em var(--mono);background:var(--surface);border:1px solid var(--rule);padding:0 4px;border-radius:3px}
+.note{border:1px solid var(--rule);background:var(--surface);padding:16px 18px;border-radius:4px;display:grid;gap:8px}
+.small{font-size:.85rem;color:var(--muted)}
+.flow{display:grid;gap:10px;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--accent);padding:12px 16px;border-radius:3px;display:grid;gap:4px}
+.step b{font-family:var(--display);font-size:1.08rem}
+.cut td:first-child{width:30%}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Gigabyte Aero 14 · your 33 picks · October 2026</p>
+  <h1>Aero Setup Plan</h1>
+  <p class="lede">Your picks, with duplicates merged into 21 things to set up. Four trading extras are saved for phase 2. Everything below except phase 2 is built into the new download.</p>
+</header>
+
+<div class="verdict">
+  <p><b>Local AI and Claude now work together all the time.</b> Before, the plan was "Claude until the Pro limit, then local." Now each one does the job it's best at, every hour:</p>
+  <ol>
+    <li><b>Local AI reads every headline first.</b> It's free and never runs out, so it handles the volume: most news is noise.</li>
+    <li><b>Claude gets the headlines that matter</b>, in this order: news about something you own, critical events (hacks, bankruptcy, takeovers, dilution, guidance, lawsuits), then anything the local model rates important.</li>
+    <li><b>Claude spot-checks 1 in 10 of the rest.</b> Each night the server compares the two. If the local model is missing important news, more goes to Claude. If Claude keeps confirming noise, less does.</li>
+    <li><b>Claude's usage is spread across the hour</b> (30 calls by default). The agents and news about your holdings can use all of it. Lower-priority checks stop at a smaller share, so the important work always has room and your plan gets used steadily instead of running dry.</li>
+  </ol>
+  <p>The local model never trades and can't start a buy on its own. If it rates news about something you own as serious, an agent wakes up and Claude decides. If Ollama goes down, Claude takes over all the scoring.</p>
+</div>
+
+<section>
+  <h2>What was merged or cut, and why</h2>
+  <div class="tbl"><table class="cut">
+    <thead><tr><th>Your picks</th><th>Now</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>News pre-filter + Backup when you hit your Pro limit</td><td><b>One hybrid AI router</b></td><td>This was the "fallback" you remembered. It was one job split in two. Now the local model screens all the time and Claude is paced, so it's never all one or the other.</td></tr>
+      <tr><td>Private chat + Local AI playground + Daytime bigger model</td><td><b>One Ollama + Open WebUI install</b></td><td>They all use the same engine and the same chat page. The bigger model is just a second model you pick in the menu during the day (it's slow, and louder).</td></tr>
+      <tr><td>Scheduled scrapers and digests</td><td><b>Folded into n8n</b></td><td>n8n already does scheduled scraping and digest emails, so a separate tool would duplicate it.</td></tr>
+      <tr><td>Daytime research runs</td><td><b>The weekday 9 to 5 heavy-jobs window</b></td><td>The nightly calibration and the scorecard run there automatically. Bedroom mode already defines the window.</td></tr>
+      <tr><td>AdGuard Home <i>or</i> Pi-hole</td><td><b>AdGuard Home</b></td><td>They do the same thing. AdGuard is easier to set up, with the web page and encrypted DNS built in.</td></tr>
+      <tr><td>Docker + Dockge <i>or</i> Portainer</td><td><b>Dockge</b></td><td>Lighter and simpler for one machine. Portainer is built for fleets.</td></tr>
+      <tr><td>RSS reader (FreshRSS or Miniflux)</td><td><b>Miniflux</b></td><td>Smaller, faster and cleaner on the phone. n8n can read its feeds.</td></tr>
+      <tr><td>Tailscale + Tailscale exit node</td><td><b>One setup step</b></td><td>The exit node is one flag on the same install.</td></tr>
+      <tr><td>Battery check + Clean fans and new thermal paste</td><td><b>One hardware session</b></td><td>Both need the bottom panel off, so do them together.</td></tr>
+      <tr><td>Ubuntu 24.04 + Security updates only, automatic</td><td><b>Part of the Ubuntu setup script</b></td><td>Turned on during install, with any needed restart at 1:30pm when you're at work.</td></tr>
+      <tr><td>Temperature and disk alerts</td><td><b>Built into the runner + smartd</b></td><td>The bot runner already alerts your iPhone, so it watches temperatures, space and memory too. smartd watches SSD wear.</td></tr>
+      <tr><td>GPU power cap + quiet fan curve</td><td><b>Power cap only</b> <span class="pill w">fan curve cut</span></td><td>Linux fan control for this 2016 Aero is hit or miss. Capping the GPU at 80W gets most of the quiet with no risk.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>The final setup</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Area</th><th>What runs</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Trading</td><td>Bots and agents as a 24/7 service · local market-data store (downloads only missing days) · SPY options quote recorder at 4pm NY · weekly scorecard (Fridays) showing whether Claude's and the local model's news scores, and each agent, beat SPY or BTC</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>AI</td><td>Hybrid router (above) · Ollama on the GTX 1060 · Open WebUI chat from your iPhone</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>Automation</td><td>n8n · Miniflux · Stirling-PDF</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>Network</td><td>Tailscale with exit node · AdGuard Home · Ethernet to the router</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>Watching and backup</td><td>Uptime Kuma · temperature, disk and SSD alerts · Time Machine for your MacBook (400 GB cap)</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>System</td><td>Ubuntu 24.04 with automatic security updates · Docker + Dockge · bedroom mode (heavy jobs weekdays 9 to 5, slower news polling 10pm to 8am)</td><td><span class="pill g">built</span></td></tr>
+      <tr><td>Hardware</td><td>Battery + fans + paste session · GPU capped at 80W · small UPS with automatic shutdown</td><td><span class="pill w">your hands</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small">The web pages only open over Tailscale, so nothing is exposed to the internet.</p>
+</section>
+
+<section>
+  <h2>Phase 2: saved for later</h2>
+  <p>These four need a few weeks of the scorecard and the data store first, so they're not in this build:</p>
+  <ul>
+    <li><b>Shadow strategies on paper</b> tests other rule sets on paper next to the real ones.</li>
+    <li><b>Earnings and macro calendar</b> keeps the agents out of earnings and Fed days unless they mean to be in.</li>
+    <li><b>Trading dashboard</b> puts positions, profit and loss, the scorecard and Claude usage on one page.</li>
+    <li><b>Tax ledger</b> keeps a running list of trades and gains, ready to export at tax time.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Setup order</h2>
+  <div class="flow">
+    <div class="step"><b>1. Hardware session (an hour)</b><span>Clean the fans, re-paste, check the battery for swelling (remove it if swollen). Plug in Ethernet.</span></div>
+    <div class="step"><b>2. Install Ubuntu 24.04</b><span>From a USB stick. Then copy the trading-bots folder over.</span></div>
+    <div class="step"><b>3. Run the server script</b><span><code>sudo bash linux/server-setup.sh your-ntfy-topic</code> sets up the driver, GPU cap, lid and sleep, updates, Docker, Tailscale and the firewall. Restart afterwards.</span></div>
+    <div class="step"><b>4. Run the installer</b><span><code>bash linux/install.sh</code> asks you to sign in to Claude once, runs the tests, starts the bots as a service, and starts all the web apps.</span></div>
+    <div class="step"><b>5. Point your router's DNS at the Aero</b><span>That turns on ad blocking for the house. Then choose the Aero in Time Machine on your Mac.</span></div>
+    <div class="step"><b>6. Paper trade for at least a month</b><span>Watch the Friday scorecard before you think about real money.</span></div>
+  </div>
+  <p class="small">Full steps and the page address list are in <code>linux/README.md</code> in the download.</p>
+</section>
+</div>

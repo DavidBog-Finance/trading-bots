@@ -1,0 +1,274 @@
+<title>Aero 14 Uses</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: header + sticky filter bar, then a single column of category groups, each a list of tickable rows */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2321; --muted:#5d6763; --rule:#d9ddda;
+  --accent:#1f6f5c; --accent-soft:#e2efe9; --on-accent:#ffffff;
+  --good:#1f7a4a; --warn:#a86a00; --bad:#b3362c;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --on-accent:#0e1513; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1c2220; --fg:#e6ebe8; --muted:#9aa6a1; --rule:#2e3633;
+  --accent:#5cc4a6; --accent-soft:#1d3a31; --on-accent:#0e1513; --good:#5fcf8f; --warn:#e3a640; --bad:#f07a6e; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.55 var(--body)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:900px;margin:0 auto;padding-block:36px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+h1,h2{font-family:var(--display);line-height:1.1;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,6vw,2.8rem)} h2{font-size:1.45rem}
+p{margin:0;max-width:70ch}
+.eyebrow{font:500 .78rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header{display:grid;gap:10px}
+.lede{color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.85rem;color:var(--muted)}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:10px;border-bottom:1px solid var(--rule);display:grid;gap:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 .8rem var(--body);border:1px solid var(--rule);background:var(--surface);color:var(--fg);padding:5px 11px;border-radius:99px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.chip:focus-visible,.btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tools{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;font-size:.88rem}
+.tools label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.btn{font:600 .82rem var(--body);background:var(--accent);color:var(--on-accent);border:0;padding:7px 14px;border-radius:4px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.count{font-family:var(--mono);color:var(--muted);margin-left:auto}
+.group{display:grid;gap:8px}
+.group-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.group-head p{color:var(--muted);font-size:.9rem}
+.list{background:var(--surface);border:1px solid var(--rule);border-radius:4px}
+.item{display:grid;grid-template-columns:28px 1fr;gap:4px 10px;padding:12px 14px;border-bottom:1px solid var(--rule)}
+.item:last-child{border-bottom:0}
+.item input{width:18px;height:18px;margin-top:3px;accent-color:var(--accent);cursor:pointer}
+.item .name{font-weight:600}
+.item .what{color:var(--fg);font-size:.93rem;min-width:0}
+.tags{grid-column:2;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tag{font:500 .7rem var(--mono);letter-spacing:.03em;padding:1px 7px;border-radius:99px;border:1px solid currentColor;white-space:nowrap}
+.g{color:var(--good)}.w{color:var(--warn)}.b{color:var(--bad)}.m{color:var(--muted)}
+.item.picked{background:var(--accent-soft)}
+.skip .item{grid-template-columns:1fr}
+.skip .tags{grid-column:1}
+.toast{font-size:.85rem;color:var(--good)}
+.small{font-size:.85rem;color:var(--muted)}
+a{color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Gigabyte Aero 14 home server · every idea, one list</p>
+  <h1>Aero 14 Uses</h1>
+  <p class="lede">Everything the Aero (and, where noted, the MacBook) could do while staying quiet and reliable. Tick what interests you, then tap <b>Copy my picks</b> and paste the list to me. I'll turn it into a setup plan and build the parts that touch the bots. See the <a href="https://claude.ai/artifact/TZtKAuf8JwYv55njF9Q4dJ" target="_blank" rel="noopener">Home Server Plan</a> for the reasoning behind the top items.</p>
+  <div class="legend">
+    <span><span class="tag g">silent</span> no extra fan noise</span>
+    <span><span class="tag w">quiet</span> fans in short bursts</span>
+    <span><span class="tag b">audible</span> fans while it runs</span>
+    <span><span class="tag m">effort</span> setup time</span>
+    <span>★ my top picks for you</span>
+  </div>
+</header>
+
+<div class="bar">
+  <div class="chips" id="chips" role="group" aria-label="Filter by category"></div>
+  <div class="tools">
+    <label for="quietOnly"><input type="checkbox" id="quietOnly"> Silent and quiet only</label>
+    <label for="topOnly"><input type="checkbox" id="topOnly"> Top picks only</label>
+    <button class="btn" id="copy" type="button">Copy my picks</button>
+    <button class="btn ghost" id="clear" type="button">Clear</button>
+    <span class="toast" id="toast" aria-live="polite"></span>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<div id="groups" style="display:grid;gap:28px"></div>
+
+<section class="group skip">
+  <div class="group-head"><h2>Don't do these</h2><p>Loud, unreliable, risky or a money-loser.</p></div>
+  <div class="list" id="skip"></div>
+</section>
+
+<p class="small">Run every service in Docker so each one is isolated and easy to remove, reachable only through Tailscale (no open router ports). Noise and load ratings assume the GPU is capped at 75–80 W and heavy jobs run during your workday, not at night, because the Aero shares your bedroom. You said you don't game much and have no smart-home devices, so those sections are for later. Your ticks are saved in this browser only.</p>
+</div>
+
+<script>
+const CATS = {
+  trade: ["Trading & money", "Make the bots smarter and keep your finances in one place."],
+  ai: ["Local AI", "Models running on the GTX 1060 (6 GB) and 64 GB of RAM. Helpers, never traders."],
+  build: ["Side projects & income", "Use it as your own small cloud for the AI income roadmap."],
+  net: ["Home network & smart home", "Make the whole house faster, safer and more automated."],
+  store: ["Storage & backup", "Use the 1 TB SSD (plus a USB drive) for your files and photos."],
+  media: ["Media & games", "Entertainment, streamed to your iPhone or TV."],
+  tools: ["Everyday tools", "Small self-hosted apps that replace paid or ad-filled services."],
+  care: ["Reliability & quiet", "The plumbing that keeps it running quietly for years."],
+};
+const I = (cat, name, what, noise, effort, top = false) => ({cat, name, what, noise, effort, top});
+const ITEMS = [
+  // Trading & money
+  I("trade","Bots and agents as a 24/7 service","The stock, crypto and options bots plus the Claude agents, run by systemd and restarted automatically if they ever crash.","silent","1 hr",true),
+  I("trade","News and agent scorecard","Every night, checks what stocks did 1, 3 and 5 days after each scored headline and compares each agent with simple baselines. A weekly push tells you if the AI is earning its keep.","silent","built by me",true),
+  I("trade","Local market-data store","Years of daily (and optionally minute) prices for every liquid stock and coin in DuckDB/Parquet. Faster scans, no rate limits, data for research.","silent","built by me",true),
+  I("trade","Options quote recorder","Saves a daily snapshot of SPY option chains. In a year you'll have real option prices to backtest the options bot on, instead of the model I had to use.","silent","built by me",true),
+  I("trade","Shadow strategies on paper","Run agent variants side by side on separate paper accounts (cautious vs aggressive, Claude vs local model) and let the scorecard pick winners.","silent","built by me",true),
+  I("trade","Daytime research runs","Walk-forward and Monte Carlo tests across thousands of symbols while you're at work, using the 64 GB of RAM. Never at night, since the Aero is in your bedroom.","quiet","built by me"),
+  I("trade","SEC filings watcher","Watches EDGAR for 8-Ks, insider buys (Form 4) and 13Ds on your holdings and pushes the material ones, scored by Claude.","silent","built by me"),
+  I("trade","Earnings and macro calendar","Warns the agents (and you) before earnings, Fed days and CPI releases on anything held.","silent","built by me"),
+  I("trade","Trading dashboard","Private page with positions, P&L vs SPY/BTC, agent journals, Claude usage and server health, on your iPhone via Tailscale.","silent","built by me",true),
+  I("trade","Tax ledger","Keeps every trade with cost basis and wash-sale flags, and exports a CSV that matches Form 8949 for tax time.","silent","built by me"),
+  I("trade","Personal budget app","Actual Budget or Firefly III: track spending and how much you can deposit each month. Private, no ads.","silent","1 hr"),
+  I("trade","Price drop alerts","changedetection.io watches product pages you care about and pings ntfy when the price falls.","silent","30 min"),
+  // Local AI
+  I("ai","Private chat (Open WebUI + Ollama)","A ChatGPT-style app on your phone, running small models at home. For quick or private questions; Claude stays your main assistant.","quiet","1 hr",true),
+  I("ai","News pre-filter","A small local model drops noise headlines before they reach Claude, so your Pro usage goes to news that matters.","quiet","built by me",true),
+  I("ai","Backup when you hit your Pro limit","Keeps scoring headlines locally while Claude is paused, so nothing material slips through. Trades still wait for Claude.","quiet","built by me",true),
+  I("ai","Duplicate story detection","An embedding model groups the same story from different sources so it's scored once.","silent","built by me"),
+  I("ai","Voice memo transcription","Whisper turns voice notes and recordings into text (and summaries). Fast on the GTX 1060.","quiet","1 hr"),
+  I("ai","Ask your documents","Index your PDFs and notes and ask questions about them, all offline.","quiet","1 hr"),
+  I("ai","Code autocomplete for VS Code","Continue extension + a small coding model on the Aero, as a free fallback alongside Claude Code.","quiet","30 min"),
+  I("ai","Image generation","Stable Diffusion 1.5-class models fit in 6 GB (about 10–20 s per image). Larger models are slow on this card.","audible","1 hr"),
+  I("ai","Text to speech","Piper or a similar local voice reads articles or your daily summary out loud.","silent","30 min"),
+  I("ai","Photo search by content","Immich's built-in AI finds photos by faces, objects and text (\"receipt\", \"dog at the beach\").","quiet","with Immich"),
+  I("ai","Daytime bigger model","A ~30B mixture-of-experts model in RAM writes the weekly research recap and grades the agents' journals during your workday.","quiet","1 hr"),
+  I("ai","Local AI playground","Try new open models the week they come out, to learn without touching the bots.","quiet","ongoing"),
+  // Side projects & income
+  I("build","Automation hub (n8n)","Zapier-style workflows with no monthly bill: email triage, lead alerts, social posting. The base for the roadmap's automation-services idea.","silent","1 hr",true),
+  I("build","Host your side projects","Websites, micro-SaaS prototypes and APIs, made public safely through a Cloudflare Tunnel (no router changes).","silent","1 hr"),
+  I("build","Your own Git + CI runner","Gitea, or a GitHub Actions self-hosted runner, so builds and tests run on your hardware for free.","quiet","1 hr"),
+  I("build","Databases for projects","Postgres, Redis or a vector database for anything you build, always on.","silent","30 min"),
+  I("build","Scheduled scrapers and digests","Nightly jobs that gather public data you care about and email or push a digest. Follow each site's terms.","silent","per job"),
+  I("build","Staging server","Test apps on a real always-on Linux box before deploying them to the cloud.","silent","30 min"),
+  I("build","Learn Linux, Docker and networking","The server itself is a hands-on course in skills people get paid for.","silent","ongoing"),
+  // Network & smart home
+  I("net","Tailscale","Reach everything here from your iPhone and Mac anywhere, encrypted, with nothing opened on your router. Needed for most of this list.","silent","15 min",true),
+  I("net","Tailscale exit node","On public Wi-Fi, your phone can send its traffic through home. A free personal VPN.","silent","5 min",true),
+  I("net","AdGuard Home or Pi-hole","Blocks ads, trackers and malware domains for every device on your Wi-Fi.","silent","30 min",true),
+  I("net","Private DNS (Unbound)","Looks up websites without sending your browsing history to your ISP's DNS.","silent","30 min"),
+  I("net","Uptime Kuma","Monitors the bots, your sites and your internet, and pushes to ntfy when something goes down.","silent","15 min",true),
+  I("net","Internet speed log","Speedtest Tracker records your speed every hour, as evidence if your ISP underdelivers.","silent","15 min"),
+  I("net","Home Assistant","One app and automations for lights, plugs, thermostats and sensors from any brand.","silent","afternoon"),
+  I("net","Homebridge","Puts non-HomeKit devices into Apple's Home app and Siri.","silent","1 hr"),
+  I("net","Security cameras (Frigate or Scrypted)","Local recording with person and car detection on the GPU, with no cloud subscription. Fans run more with several cameras.","quiet","afternoon"),
+  // Storage & backup
+  I("store","Time Machine for your MacBook","The Mac backs itself up to the Aero automatically over Wi-Fi.","silent","30 min",true),
+  I("store","Immich photo backup","Optional second copy of your iPhone photos with search, like Google Photos. Your 200 GB iCloud plan is cheap and stays your main copy.","quiet","1 hr"),
+  I("store","Off-site backup (restic + Backblaze B2)","Encrypted nightly copy of what matters (bot memory, photos, configs). About $6 per TB a month.","silent","1 hr",true),
+  I("store","USB drive second copy","A cheap external drive gets a nightly copy, because one laptop isn't a backup.","silent","30 min"),
+  I("store","File sync (Syncthing or Nextcloud)","Your own Dropbox between Mac and iPhone.","silent","1 hr"),
+  I("store","Document archive (Paperless-ngx)","Scan or forward receipts and documents; it reads the text so everything is searchable. Handy at tax time.","quiet","1 hr"),
+  I("store","Password manager (Vaultwarden)","Self-hosted Bitwarden-compatible vault. Only with off-site backups in place. Otherwise a paid service is safer.","silent","1 hr"),
+  I("store","Read-later and bookmarks","Karakeep, Linkwarden or Wallabag saves articles permanently, even if the original disappears.","silent","30 min"),
+  I("store","Offline Wikipedia (Kiwix)","All of Wikipedia (~100 GB) available with no internet. Fun use of the 1 TB SSD.","silent","30 min"),
+  // Media & games
+  I("media","Jellyfin","Stream movies and shows you own to your phone and TV, with GPU transcoding.","quiet","1 hr"),
+  I("media","Music server (Navidrome)","Your own Spotify for music files you own.","silent","30 min"),
+  I("media","Audiobookshelf","Audiobooks and podcasts with synced progress across devices.","silent","30 min"),
+  I("media","Game streaming (Sunshine + Moonlight)","Play PC games from the Aero on your iPhone, iPad or Mac. Fans spin while you play.","audible","1 hr"),
+  I("media","Game server for friends","Minecraft or similar. 64 GB of RAM is plenty; noise depends on player count.","quiet","1 hr"),
+  I("media","Retro emulation","Classic consoles streamed to your phone via Moonlight.","quiet","1 hr"),
+  // Everyday tools
+  I("tools","Private search (SearXNG)","Search Google, Bing and others without being tracked.","silent","30 min"),
+  I("tools","RSS reader (FreshRSS or Miniflux)","Follow blogs and news in one place. Can also feed sources to the news watcher.","silent","30 min"),
+  I("tools","Stirling-PDF","Merge, split, sign and compress PDFs privately, instead of uploading them to random websites.","silent","15 min"),
+  I("tools","Self-hosted ntfy","Run your own notification server, so the bots' alerts don't depend on the public ntfy.sh.","silent","30 min"),
+  I("tools","Recipes and meal planning (Mealie)","Save recipes from any site and generate shopping lists.","silent","30 min"),
+  I("tools","Ebook library (Calibre-Web)","Your ebooks, readable on any device.","silent","30 min"),
+  I("tools","Whiteboard and IT tools","Excalidraw, plus a toolbox for converting and encoding things.","silent","15 min"),
+  I("tools","Folding@home, capped","Donate spare compute to disease research, limited to 1–2 CPU threads at night with the GPU off. Full power would break the quiet rule.","quiet","15 min"),
+  // Reliability & quiet
+  I("care","Ubuntu 24.04 LTS","A stable base with security updates to 2029 (2034 with free Ubuntu Pro). No surprise restarts.","silent","afternoon",true),
+  I("care","Battery check or removal","Inspect the ~9-year-old battery for swelling. Set a charge limit or run on AC only.","silent","30 min",true),
+  I("care","Clean fans, new thermal paste","Nine years of dust is the main cause of fan noise. Paste is optional.","silent","1 hr",true),
+  I("care","GPU power cap + quiet fan curve","nvidia-smi -pl 80, the CPU powersave governor, and nbfc-linux fan curves. Most of the speed, far less noise.","silent","30 min",true),
+  I("care","Temperature and disk alerts","Push to ntfy if the CPU stays above 85 °C, the GPU above 80 °C, or the SSD's health drops.","silent","built by me",true),
+  I("care","Small UPS + automatic shutdown","Rides out blackouts and shuts down cleanly on long ones (NUT). $60–90.","silent","30 min",true),
+  I("care","Security updates only, automatic","unattended-upgrades for security fixes. Apps update when you choose, with Diun telling you what's new.","silent","15 min",true),
+  I("care","Docker + Dockge or Portainer","Every app in its own container, managed from a web page. Easy to add, update and remove.","silent","30 min",true),
+  I("care","Netdata or Glances","Live CPU, RAM, temperature and network graphs from your phone.","silent","15 min"),
+  I("care","Cockpit","Web admin for the server: updates, logs and services without typing commands.","silent","15 min"),
+  I("care","Config backup","Keep docker-compose files and settings in a private Git repo, so a dead SSD is a one-hour rebuild.","silent","30 min"),
+  I("care","Ethernet cable to the router","The router is in the same room, so use a USB-to-Ethernet adapter (about $15) and a short cable. Steadier and faster than Wi-Fi for the bots.","silent","5 min",true),
+  I("care","Bedroom mode","Heavy jobs only 9 am–5 pm while you're at work. From 10 pm to 8 am: GPU idle, fans capped, keyboard backlight and lights off, screen off. Only the bots run, and they're silent.","silent","built by me",true),
+];
+const SKIP = [
+  ["Crypto mining","Earns pennies a day, costs about $0.60–0.75 a day in LA electricity, runs the fans full time and wears out the card."],
+  ["Opening router ports","Exposes a laptop holding your trading keys to the internet. Use Tailscale or a Cloudflare Tunnel instead."],
+  ["Tor exit node or public proxy","Other people's traffic comes out of your home internet connection. Legal and abuse headaches."],
+  ["Piracy setups","Legal risk, and ISP warnings tie back to your account."],
+  ["Heavy AI or rendering around the clock","Large models, video rendering or training at full load means constant fan noise and heat. Keep it to bursts, overnight."],
+  ["Local models placing trades","Too weak for that, and it would bypass the safety design. Helpers only."],
+  ["Windows 10 as the base","Updates end Oct 2027 even with the extension, and Windows restarts on its own."],
+  ["Auto-updating every app nightly","Watchtower-style blind updates break things at 3 am. Update on purpose and keep notifications."],
+];
+
+const KEY = "aero-picks-v1";
+let picks = new Set();
+try { picks = new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...picks])); } catch (e) {} };
+let cat = "all";
+const noiseClass = {silent:"g", quiet:"w", audible:"b"};
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+function renderChips() {
+  const el = document.getElementById("chips");
+  const all = [["all","All"], ...Object.entries(CATS).map(([k, v]) => [k, v[0]])];
+  el.innerHTML = all.map(([k, label]) =>
+    `<button type="button" class="chip" data-cat="${k}" aria-pressed="${k === cat}">${esc(label)}</button>`).join("");
+  el.querySelectorAll(".chip").forEach(b => b.onclick = () => { cat = b.dataset.cat; renderChips(); render(); });
+}
+
+function render() {
+  const quiet = document.getElementById("quietOnly").checked;
+  const top = document.getElementById("topOnly").checked;
+  const out = [];
+  let shown = 0;
+  for (const [k, [title, blurb]] of Object.entries(CATS)) {
+    if (cat !== "all" && cat !== k) continue;
+    const rows = ITEMS.filter(i => i.cat === k && (!quiet || i.noise !== "audible") && (!top || i.top));
+    if (!rows.length) continue;
+    shown += rows.length;
+    out.push(`<section class="group"><div class="group-head"><h2>${esc(title)}</h2><p>${esc(blurb)}</p></div><div class="list">` +
+      rows.map(i => {
+        const id = "p-" + slug(i.name);
+        const on = picks.has(i.name);
+        return `<div class="item${on ? " picked" : ""}"><input type="checkbox" id="${id}" data-name="${esc(i.name)}"${on ? " checked" : ""}>
+          <label for="${id}" class="what"><span class="name">${i.top ? "★ " : ""}${esc(i.name)}</span><br>${esc(i.what)}</label>
+          <div class="tags"><span class="tag ${noiseClass[i.noise]}">${i.noise}</span><span class="tag m">${esc(i.effort)}</span></div></div>`;
+      }).join("") + `</div></section>`);
+  }
+  document.getElementById("groups").innerHTML = out.join("") || `<p class="small">Nothing matches these filters.</p>`;
+  document.querySelectorAll("#groups input[type=checkbox]").forEach(cb => cb.onchange = () => {
+    cb.checked ? picks.add(cb.dataset.name) : picks.delete(cb.dataset.name);
+    cb.closest(".item").classList.toggle("picked", cb.checked);
+    save(); count();
+  });
+  count(shown);
+}
+let lastShown = 0;
+function count(shown) {
+  if (shown !== undefined) lastShown = shown;
+  document.getElementById("count").textContent = `${lastShown} shown · ${picks.size} picked`;
+}
+document.getElementById("skip").innerHTML = SKIP.map(([n, w]) =>
+  `<div class="item"><div class="what"><span class="name">${esc(n)}</span><br>${esc(w)}</div></div>`).join("");
+document.getElementById("quietOnly").onchange = render;
+document.getElementById("topOnly").onchange = render;
+document.getElementById("clear").onclick = () => { picks.clear(); save(); render(); };
+document.getElementById("copy").onclick = async () => {
+  const toast = document.getElementById("toast");
+  const list = ITEMS.filter(i => picks.has(i.name)).map(i => "- " + i.name);
+  const text = list.length ? "My Aero picks:\n" + list.join("\n") : "";
+  if (!text) { toast.textContent = "Tick a few items first."; return; }
+  try { await navigator.clipboard.writeText(text); toast.textContent = "Copied. Paste it in the chat."; }
+  catch (e) {
+    const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); toast.textContent = "Copied. Paste it in the chat."; }
+    catch (e2) { toast.textContent = "Copy blocked: select the ticked names and copy them by hand."; }
+    ta.remove();
+  }
+};
+renderChips(); render();
+</script>

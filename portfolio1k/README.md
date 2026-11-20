@@ -11,7 +11,7 @@ Full plan: the "Portfolio 1k: options-only plan" doc. Paper first: 6+ weeks and 
 | Account floor (kill) | 50% of net deposits |
 | Daily / weekly loss pause | -20% / -30% |
 | Trades | 2 a day, 8 a week, one open at a time |
-| Size | 50% of equity (stop -30%); full port 100% (stop -25%) only on A+ two-setup trades, max 1/week, never after a loss |
+| Size | 50% of equity (stop -30%) on every trade, A+ included. Full port (100%, stop -25%) is retired; it can come back only if the owner sets `P1K_FULL_PORT=true` or sends `full` |
 | Losing streak | 3 losses: pause 2 trading days, then 3 trades at standard size |
 | Contract | delta 0.40-0.55, open interest 1,000+, spread <= 5% of mid (ETFs $0.03), volume 500+ when known |
 

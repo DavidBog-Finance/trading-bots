@@ -32,7 +32,7 @@ MIN_VOLUME = _f("MIN_VOLUME", 500)
 # Sizing
 STANDARD_PCT, FULL_PCT = _f("STANDARD_PCT", 0.50), _f("FULL_PCT", 1.00)
 STANDARD_STOP, FULL_STOP = _f("STANDARD_STOP", 0.30), _f("FULL_STOP", 0.25)
-FULL_PORT_ENABLED = _b("FULL_PORT", True)
+FULL_PORT_ENABLED = _b("FULL_PORT", False)   # retired 2026-11-20 by the owner; A+ trades use standard size
 FULL_PER_WEEK = int(_f("FULL_PER_WEEK", 1))
 
 # Exits

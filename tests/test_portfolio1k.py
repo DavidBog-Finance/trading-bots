@@ -135,16 +135,22 @@ def test_ticks_and_sizing():
     assert R.budget_for("standard", 1000, 1000) == 500 and R.budget_for("full", 1000, 800) == 800
 
 
+def test_full_port_retired_by_default():
+    sig = R.Signal("NVDA", "orb", "call", 100, extra={"also": ["news"]})
+    assert R.choose_tier(sig, "A+", True, {}, "2026-W47") == ("standard", "full port switched off")
+
+
 def test_full_port_only_when_every_rule_holds():
     sig = R.Signal("NVDA", "orb", "call", 100, extra={"also": ["news"]})
-    assert R.choose_tier(sig, "A+", True, {}, "2026-W47")[0] == "full"
-    assert R.choose_tier(sig, "A", True, {}, "2026-W47")[0] == "standard"
-    assert R.choose_tier(R.Signal("NVDA", "orb", "call", 100), "A+", True, {}, "2026-W47")[0] == "standard"
-    assert R.choose_tier(sig, "A+", True, {"last_result": "loss"}, "2026-W47")[0] == "standard"
-    assert R.choose_tier(sig, "A+", True, {"full_week": "2026-W47", "full_count": 1}, "2026-W47")[0] == "standard"
-    assert R.choose_tier(sig, "A+", True, {"full_week": "2026-W46", "full_count": 1}, "2026-W47")[0] == "full"
+    on = {"full_enabled": True}
+    assert R.choose_tier(sig, "A+", True, on, "2026-W47")[0] == "full"
+    assert R.choose_tier(sig, "A", True, on, "2026-W47")[0] == "standard"
+    assert R.choose_tier(R.Signal("NVDA", "orb", "call", 100), "A+", True, on, "2026-W47")[0] == "standard"
+    assert R.choose_tier(sig, "A+", True, {**on, "last_result": "loss"}, "2026-W47")[0] == "standard"
+    assert R.choose_tier(sig, "A+", True, {**on, "full_week": "2026-W47", "full_count": 1}, "2026-W47")[0] == "standard"
+    assert R.choose_tier(sig, "A+", True, {**on, "full_week": "2026-W46", "full_count": 1}, "2026-W47")[0] == "full"
     assert R.choose_tier(sig, "A+", True, {"full_enabled": False}, "2026-W47")[0] == "standard"
-    assert R.choose_tier(sig, "A+", True, {"standard_only_left": 2}, "2026-W47")[0] == "standard"
+    assert R.choose_tier(sig, "A+", True, {**on, "standard_only_left": 2}, "2026-W47")[0] == "standard"
 
 
 # ---------- risk limits ----------

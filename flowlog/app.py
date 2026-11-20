@@ -41,7 +41,7 @@ def say(text: str, title: str = "Flow log"):
     B.log.info("flow log: push '%s' (%d lines)", title, len(text.splitlines()))
     if C.NTFY_TOPIC:
         B._post(f"https://ntfy.sh/{C.NTFY_TOPIC}", text.encode(),
-                {"Title": title, "Priority": "low", "Tags": "whale"})
+                {"Title": title, "Priority": "default", "Tags": "whale"})
 
 
 def add_text(text: str, when: datetime | None = None) -> list[str]:

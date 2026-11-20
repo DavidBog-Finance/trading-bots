@@ -8,6 +8,7 @@
 #   ALPACA_API_KEY, ALPACA_SECRET_KEY   Alpaca PAPER keys
 #   CLAUDE_CODE_OAUTH_TOKEN             from `claude setup-token` on your Mac (your Claude plan, no API key)
 #   NTFY_TOPIC, CONTROL_TOPIC           phone alerts and phone commands
+#   CONTROL_PIN (optional)              a short number; commands that change anything must include it ("kill 1k 4821")
 #   HEALTHCHECK_URL (optional)          healthchecks.io ping URL: warns you if a weekday session never starts
 # Variables: NET_DEPOSITS_OVERRIDE (your paper balance, e.g. 1000). Optional P1K_* overrides (portfolio1k/settings.py).
 #
@@ -21,7 +22,8 @@ name: options-agent
 
 on:
   schedule:
-    - cron: "5 13-20 * * 1-5"   # hourly, 13:05-20:05 UTC = covers 9:00-16:20 New York in summer and winter
+    - cron: "17 13-20 * * 1-5"  # hourly at :17 (the top of the hour is GitHub's busiest), 13:17-20:17 UTC
+                                #   = covers 8:17-16:20 New York in summer and winter
   workflow_dispatch:
     inputs:
       action:
@@ -30,6 +32,9 @@ on:
         default: status
         type: choice
         options: [status, scorecard, run-now, close-trade, kill, export-memory]
+
+permissions:
+  contents: read            # this workflow only reads the code; it never writes to the repo
 
 concurrency:
   group: options-agent      # one run at a time; a queued run starts when the current one ends
@@ -46,6 +51,7 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       CONTROL_TOPIC: ${{ secrets.CONTROL_TOPIC }}
+      CONTROL_PIN: ${{ secrets.CONTROL_PIN }}
       # Optional: a healthchecks.io ping URL. Each scheduled run pings it when it starts, so healthchecks.io
       # can text/email you if a weekday morning passes with no run (GitHub delayed or skipped it).
       HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
@@ -92,7 +98,8 @@ jobs:
         run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL" || true
       - name: Trade the session
         if: github.event_name == 'schedule' || inputs.action == 'run-now'
-        run: python -m portfolio1k run --max-minutes 340
+        # 330 min leaves ~25 min of the 355-min job for setup and for saving memory, even on a slow day
+        run: python -m portfolio1k run --max-minutes 330
       - name: Status to phone
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'status'
         run: python -m portfolio1k status

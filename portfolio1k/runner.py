@@ -78,6 +78,78 @@ class Runner:
         store.event("problem", msg)
         B.alert(f"[1k] {msg}")
 
+    # ---------- rebuilding memory from Alpaca ----------
+    def startup(self):
+        """Run once when the program starts. GitHub's cache can be evicted or roll back to an older copy,
+        so Alpaca (the broker) is the source of truth: adopt a position the memory lost, close one that is
+        gone, fix a quantity, and rebuild today's and this week's trade counts from Alpaca's order history."""
+        if C.DRY_RUN:
+            return
+        try:
+            self.roll(now_et(), float(self.account().equity))
+            self._reconcile()
+            self._rebuild_counts(now_et())
+        except Exception as e:
+            B.log.warning("[1k] startup check with Alpaca failed: %s", e)
+
+    def _held_options(self) -> dict:
+        """Long option positions on the watchlist, skipping any root that also has a short leg (a spread
+        from another bot is never adopted)."""
+        held, short_roots = {}, set()
+        for pos in self.client.get_all_positions():
+            info = R.parse_occ(pos.symbol)
+            if not info:
+                continue
+            q = int(float(pos.qty))
+            if q < 0:
+                short_roots.add(info["root"])
+            elif info["root"] in S.WATCHLIST:
+                held[pos.symbol] = (q, float(pos.avg_entry_price or 0))
+        return {s: v for s, v in held.items() if R.parse_occ(s)["root"] not in short_roots}
+
+    def _reconcile(self):
+        held = self._held_options()
+        local = self.position()
+        action, sym = R.reconcile(local, {s: q for s, (q, _) in held.items()})
+        if action == "resize":
+            old = local["qty"]
+            local["qty"] = held[sym][0]
+            self.set_position(local)
+            self.problem(f"Memory said {old} {sym}, Alpaca holds {local['qty']}. Using Alpaca's number.")
+        elif action == "adopt":
+            q, entry = held[sym]
+            info = R.parse_occ(sym)
+            stop = round(entry * (1 - S.STANDARD_STOP), 2)
+            opened = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            review = {"take": True, "grade": "none", "reason": "recovered from Alpaca after the memory was lost"}
+            tid = store.open_trade(opened=opened, symbol=sym, underlying=info["root"], setup="recovered",
+                                   direction=info["direction"], tier="standard", qty=q, entry=entry, cost=entry * q * 100,
+                                   equity_before=float(self.account().equity), claude=json.dumps(review), feed=S.OPTION_FEED)
+            self.set_position({"trade_id": tid, "symbol": sym, "root": info["root"], "direction": info["direction"],
+                               "setup": "recovered", "tier": "standard", "qty": q, "qty_open": q, "entry": entry,
+                               "stop": stop, "stop_id": trader.open_stop_for(self.client, sym), "tp1_done": False,
+                               "high": entry, "level": None, "expiry": info["expiry"].isoformat(),
+                               "cost": entry * q * 100, "realized": 0.0, "opened": opened})
+            self.notify(f"Memory was missing an open trade, so I took it back from Alpaca: {q} {sym} bought at "
+                        f"${entry:.2f}. Managing it with the normal rules (stop ${stop:.2f}).", "Recovered trade")
+        # "gone" is handled by manage() on the first tick, using the real closing fill price
+
+    def _rebuild_counts(self, now: datetime):
+        day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week0 = day0 - timedelta(days=now.weekday())
+        orders = trader.recent_orders(self.client, week0.astimezone(timezone.utc))
+        if not orders:
+            return
+        st = self.st
+        today, wk = now.date().isoformat(), R.iso_week(now.date())
+        n_day = R.bot_buys_since(orders, day0.astimezone(timezone.utc).isoformat())
+        n_week = R.bot_buys_since(orders, week0.astimezone(timezone.utc).isoformat())
+        if st.get("day") == today and n_day > st.get("trades_day", 0):
+            st["trades_day"] = n_day
+        if st.get("week") == wk and n_week > st.get("trades_week", 0):
+            st["trades_week"] = n_week
+        self.save()
+
     # ---------- day bookkeeping ----------
     def roll(self, now: datetime, equity: float):
         today = now.date().isoformat()
@@ -118,7 +190,15 @@ class Runner:
             if msg.get("event") != "message":
                 continue
             store.put("cmd_since", msg["id"])
-            self.handle((msg.get("message") or "").strip().lower().replace(" 1k", "").strip())
+            age = time.time() - float(msg.get("time") or time.time())
+            cmd, problem = R.parse_command(msg.get("message") or "", S.CONTROL_PIN, age)
+            if problem == "missing or wrong PIN":
+                B.log.warning("[1k] phone command '%s' ignored: missing or wrong PIN", cmd)
+                B.notify(f"Ignored '{cmd}': it needs your PIN, e.g. '{cmd} 1k <PIN>'.", "1k Command ignored", "default")
+            elif problem:
+                B.log.info("[1k] phone message ignored (%s)", problem)
+            else:
+                self.handle(cmd)
 
     def handle(self, cmd: str):
         B.log.info("[1k] phone command: %s", cmd)
@@ -141,7 +221,8 @@ class Runner:
             self.st["full_enabled"] = cmd == "full"
             self.notify(f"Full-port trades {'ON' if cmd == 'full' else 'OFF'}.", "Setting")
         elif cmd == "help":
-            B.notify("status | pause | resume | close | kill | nofull | full  (add ' 1k' or not)", "1k Commands", "low")
+            B.notify("status | help (no PIN needed)\npause | resume | close | kill | nofull | full"
+                     + (" (add your PIN, e.g. 'kill 1k 1234')" if S.CONTROL_PIN else ""), "1k Commands", "low")
         self.save()
 
     def kill(self, why: str):
@@ -164,12 +245,26 @@ class Runner:
             return
         held = self.held_qty(p["symbol"])
         if held == 0 and not C.DRY_RUN:
-            self.problem(f"{p['symbol']} is no longer in the account but no fill was recorded. Marking it closed at the last price.")
-            self.finish(p, p.get("last_mark", p["entry"]), p["qty"], R.Exit(p["qty"], "position gone", "unknown"))
+            px = self.closing_fill(p) or p.get("last_mark", p["entry"])
+            self.problem(f"{p['symbol']} is no longer in the account but this program did not sell it. "
+                         f"Recording it closed at ${px:.2f}.")
+            self.finish(p, px, p["qty"], R.Exit(p["qty"], "position gone", "unknown"))
             return
-        # 2) Make sure a stop is resting (DAY orders expire every evening)
-        if not trader.stop_active(self.client, p.get("stop_id")):
+        # 2) Make sure a stop for the full quantity is resting at Alpaca (DAY orders expire every evening)
+        active, stop_qty = trader.stop_state(self.client, p.get("stop_id"))
+        if active and stop_qty is not None and stop_qty != p["qty"]:
+            trader.cancel(self.client, p.get("stop_id"))
+            active = False
+        if not active:
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
+            if not p["stop_id"] and not p.get("stop_alerted"):
+                p["stop_alerted"] = True
+                self.problem(f"No stop order is resting at Alpaca for {p['symbol']} and placing one failed. "
+                             f"This program still watches the -{R.stop_pct(p['tier']):.0%} stop every {S.LOOP_SEC:.0f} s "
+                             f"while it runs, but nothing protects the trade if it stops. Check the Alpaca app.")
+            elif p["stop_id"] and p.get("stop_alerted"):
+                p["stop_alerted"] = False
+                self.notify(f"Stop order for {p['symbol']} is resting at Alpaca again (${p['stop']:.2f}).", "Stop restored")
             self.set_position(p)
         # 3) Price-based exits
         bid, ask, ts = data.option_quote(p["symbol"])
@@ -184,7 +279,7 @@ class Runner:
         last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
         ex = R.exit_decision({**p, "expiry": date.fromisoformat(p["expiry"])}, mark, now, last_close, next_day)
         if ex and (fresh or ex.kind in ("time", "expiry", "setup_stop")):
-            self.exit(p, ex, bid)
+            self.exit(p, ex, bid, ask)
 
     def held_qty(self, symbol: str) -> int:
         try:
@@ -192,19 +287,25 @@ class Runner:
         except Exception:
             return 0
 
-    def exit(self, p: dict, ex: R.Exit, bid: float | None = None):
-        if bid is None:
+    def exit(self, p: dict, ex: R.Exit, bid: float | None = None, ask: float | None = None):
+        if bid is None or ask is None:
             try:
-                bid = data.option_quote(p["symbol"])[0]
+                bid, ask, _ = data.option_quote(p["symbol"])
             except Exception:
-                bid = p.get("last_mark", p["entry"])
+                bid, ask = p.get("last_mark", p["entry"]), 0.0
         trader.cancel(self.client, p.get("stop_id"))
         q, px = trader.stop_filled(self.client, p.get("stop_id"))  # filled while we were cancelling?
         if q:
             self.finish(p, px, q, R.Exit(q, "stop filled at Alpaca", "stop"))
             return
         qty = min(ex.qty, p["qty"])
-        px = trader.sell(self.client, p["symbol"], qty, bid)
+        px = trader.sell(self.client, p["symbol"], qty, bid, ask or 0.0, urgent=R.exit_is_urgent(ex.kind))
+        fc = R.fill_cost("sell", bid or 0, ask or 0, px)
+        if fc["slip"] is not None:
+            p["exit_slip_q"] = p.get("exit_slip_q", 0.0) + fc["slip"] * qty
+            p["exit_slip_pct_q"] = p.get("exit_slip_pct_q", 0.0) + fc["slip_pct"] * qty
+            p["exit_q"] = p.get("exit_q", 0) + qty
+            p["exit_bid"], p["exit_ask"] = bid, ask
         if qty < p["qty"]:   # take profit 1 on 2+ contracts: keep the rest with a breakeven stop
             p["realized"] = p.get("realized", 0.0) + (px - p["entry"]) * qty * 100
             p["qty"] -= qty
@@ -219,6 +320,14 @@ class Runner:
             p["tp1_done"] = True
         self.finish(p, px, qty, ex)
 
+    def closing_fill(self, p: dict) -> float | None:
+        """Average price of the sells that closed this contract while the program was not watching."""
+        since = datetime.fromisoformat(p.get("opened") or (datetime.now(timezone.utc) - timedelta(days=7)).isoformat())
+        rows = [o for o in trader.recent_orders(self.client, since)
+                if o["symbol"] == p["symbol"] and o["side"] == "sell" and o["status"] == "filled" and o["qty"] > 0]
+        q = sum(o["qty"] for o in rows)
+        return sum(o["qty"] * o["price"] for o in rows) / q if q else None
+
     def finish(self, p: dict, px: float, qty: int, ex: R.Exit):
         pnl = p.get("realized", 0.0) + (px - p["entry"]) * qty * 100
         slip = None
@@ -226,8 +335,13 @@ class Runner:
             planned = -R.stop_pct(p["tier"])
             slip = round((planned - (px / p["entry"] - 1)) * 100, 1)
         result = "win" if pnl > 0 else "loss" if pnl < 0 else "flat"
+        eq_n = p.get("exit_q", 0)
         store.close_trade(p["trade_id"], closed=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                          exit=px, pnl=round(pnl, 2), kind=ex.kind, slip=slip, reason=ex.reason)
+                          exit=px, pnl=round(pnl, 2), kind=ex.kind, slip=slip, reason=ex.reason,
+                          exit_bid=p.get("exit_bid"), exit_ask=p.get("exit_ask"),
+                          exit_slip=round(p["exit_slip_q"] / eq_n, 4) if eq_n else None,
+                          exit_slip_pct=round(p["exit_slip_pct_q"] / eq_n, 4) if eq_n else None,
+                          fees=round(S.FEE_PER_CONTRACT_SIDE * 2 * p.get("qty_open", qty), 2))
         self.st = R.after_close(self.st, result, now_et().date())
         self.save()
         self.set_position(None)
@@ -240,8 +354,7 @@ class Runner:
     # ---------- looking for a trade ----------
     def scan(self, now: datetime, acct, equity: float):
         st = self.st
-        why = R.entry_block(st, now, equity, self.deposits(), bool(self.position()),
-                            int(getattr(acct, "daytrade_count", 0) or 0), S.FOMC_DAYS)
+        why = R.entry_block(st, now, equity, self.deposits(), bool(self.position()), S.FOMC_DAYS)
         if why:
             return why
         prep = store.get("prep") or {}
@@ -322,14 +435,18 @@ class Runner:
         stop = round(px * (1 - R.stop_pct(tier)), 2)
         stop_id = trader.place_stop(self.client, pick["symbol"], sig.symbol, filled, stop)
         cost = px * filled * 100
-        tid = store.open_trade(opened=datetime.now(timezone.utc).isoformat(timespec="seconds"), symbol=pick["symbol"],
+        opened = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        fc = R.fill_cost("buy", pick["bid"], pick["ask"], px)
+        tid = store.open_trade(opened=opened, symbol=pick["symbol"],
                                underlying=sig.symbol, setup="+".join([sig.setup, *sig.extra.get("also", [])]),
                                direction=sig.direction, tier=tier, qty=filled, entry=px, cost=cost,
-                               equity_before=equity, claude=json.dumps(review))
+                               equity_before=equity, claude=json.dumps(review), feed=S.OPTION_FEED,
+                               entry_bid=pick["bid"], entry_ask=pick["ask"], entry_slip=fc["slip"],
+                               entry_slip_pct=fc["slip_pct"], entry_spread_pct=fc["spread_pct"])
         self.set_position({"trade_id": tid, "symbol": pick["symbol"], "root": sig.symbol, "direction": sig.direction,
-                           "setup": sig.setup, "tier": tier, "qty": filled, "entry": px, "stop": stop, "stop_id": stop_id,
-                           "tp1_done": False, "high": px, "level": sig.level, "expiry": pick["expiry"].isoformat(),
-                           "cost": cost, "realized": 0.0})
+                           "setup": sig.setup, "tier": tier, "qty": filled, "qty_open": filled, "entry": px, "stop": stop,
+                           "stop_id": stop_id, "tp1_done": False, "high": px, "level": sig.level,
+                           "expiry": pick["expiry"].isoformat(), "cost": cost, "realized": 0.0, "opened": opened})
         st = self.st
         st["trades_day"] = st.get("trades_day", 0) + 1
         st["trades_week"] = st.get("trades_week", 0) + 1
@@ -379,8 +496,10 @@ class Runner:
             flags.append("full port off")
         if flags:
             lines.append("Flags: " + ", ".join(flags))
-        card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
+        trades = store.closed_trades()
+        card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
         lines.append(scorecard_line(card))
+        lines += [x for x in (cost_line(trades), grade_lines(trades)) if x]
         return "\n".join(lines)
 
     def daily_summary(self, now: datetime):
@@ -430,6 +549,7 @@ class Runner:
 
     def run(self, max_minutes: float | None = None):
         start = time.time()
+        self.startup()
         end_et = None
         if max_minutes:
             today_end = now_et().replace(hour=16, minute=20, second=0, microsecond=0)
@@ -468,6 +588,31 @@ class Runner:
                 store.put("last_error_alert", time.time())
                 self.problem(f"Error (it keeps running; the stop at Alpaca still protects any trade): {type(e).__name__}: {str(e)[:200]}")
             return False
+
+
+def cost_line(trades: list) -> str:
+    """The cost log in one line: what the fills gave up versus the mid, and what that adds up to per year."""
+    if not trades:
+        return ""
+    first = datetime.fromisoformat(trades[0]["opened"]) if trades[0].get("opened") else datetime.now(timezone.utc)
+    days = max(1.0, (datetime.now(timezone.utc) - first).total_seconds() / 86400)
+    c = R.cost_report(trades, S.FEE_PER_CONTRACT_SIDE, days)
+    if not c:
+        return ""
+    return (f"Costs ({c['trades']} trades, {S.OPTION_FEED} quotes): paid {c['entry_slip_pct']:+.1%} vs mid in, "
+            f"{c['exit_slip_pct']:+.1%} out, spread {c['spread_pct']:.1%}; about {fmt_money(c['avg_round_trip'])} per round trip "
+            f"x {c['trades_per_year']:.0f} trades/yr = {fmt_money(c['cost_per_year'])}/yr")
+
+
+def grade_lines(trades: list) -> str:
+    """Report card for Claude's grades: does A+ really beat A and B after costs?"""
+    card = R.grade_card(trades, S.REAL_COST_PER_CONTRACT)
+    if not card:
+        return ""
+    order = ["A+", "A", "B", "rules only", "none"]
+    rows = [f"{g}: {c['trades']} trades, win {c['win_rate']:.0%}, avg {fmt_money(c['avg'])}"
+            for g, c in sorted(card.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 9)]
+    return "Grades: " + "; ".join(rows) + (" (under 20 trades each is mostly luck)" if min(c["trades"] for c in card.values()) < 20 else "")
 
 
 def scorecard_line(card: dict) -> str:

@@ -80,10 +80,11 @@ def side_from_ticks(trades: list) -> str:
 
 
 def to_alert(c: Contract, side: str, today: date) -> P.Alert:
-    tags = ["scan", "vol>oi"] + (["est-side"] if side else [])
+    # "delayed": Alpaca's free option feed delays trades and alters quotes, so this is never real-time flow
+    tags = ["scan", "delayed", "vol>oi"] + (["est-side"] if side else [])
     a = P.Alert(symbol=c.underlying, expiry=c.expiry, strike=c.strike, kind=c.kind, side=side,
                 premium=round(c.premium), tags=tags, alert_day=today)
-    a.text = f"[scan] {a.short()} vol {int(c.volume):,} / OI {int(c.open_interest):,}"
+    a.text = f"[scan, delayed data] {a.short()} vol {int(c.volume):,} / OI {int(c.open_interest):,}"
     return a
 
 

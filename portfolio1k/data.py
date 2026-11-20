@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from alpaca.data.enums import DataFeed
+from alpaca.data.enums import DataFeed, OptionsFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.option import OptionHistoricalDataClient
 from alpaca.data.requests import OptionBarsRequest, OptionChainRequest, OptionSnapshotRequest, StockBarsRequest
@@ -68,7 +68,7 @@ def candidates(trading_client, underlying: str, direction: str, spot: float, tod
     ctype = ContractType.CALL if direction == "call" else ContractType.PUT
     lo, hi = spot * 0.95, spot * 1.05
     chain = _options().get_option_chain(OptionChainRequest(
-        underlying_symbol=underlying, type=ctype,
+        underlying_symbol=underlying, type=ctype, feed=option_feed(),
         expiration_date_gte=today + timedelta(days=S.MIN_DTE), expiration_date_lte=today + timedelta(days=S.MAX_DTE),
         strike_price_gte=lo, strike_price_lte=hi))
     oi = {}
@@ -106,8 +106,13 @@ def add_volume(rows: list, today: date):
         B.log.info("[1k] option volume unavailable (%s); open-interest filter still applies", e)
 
 
+def option_feed() -> OptionsFeed:
+    """Named on every request, so a change in Alpaca's default can never silently switch feeds."""
+    return OptionsFeed.OPRA if S.OPTION_FEED == "opra" else OptionsFeed.INDICATIVE
+
+
 def option_quote(symbol: str) -> tuple[float, float, datetime | None]:
-    snap = _options().get_option_snapshot(OptionSnapshotRequest(symbol_or_symbols=symbol))[symbol]
+    snap = _options().get_option_snapshot(OptionSnapshotRequest(symbol_or_symbols=symbol, feed=option_feed()))[symbol]
     q = snap.latest_quote
     return float(q.bid_price or 0), float(q.ask_price or 0), q.timestamp
 

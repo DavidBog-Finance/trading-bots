@@ -255,7 +255,7 @@ def iso_week(d: date) -> str:
 
 
 def entry_block(st: dict, now: datetime, equity: float, deposits: float, has_position: bool,
-                daytrades: int, fomc_days: set) -> str | None:
+                fomc_days: set) -> str | None:
     """Why no new trade may open right now (None = allowed). `now` is New York time."""
     today = now.date().isoformat()
     if st.get("killed"):
@@ -282,8 +282,6 @@ def entry_block(st: dict, now: datetime, equity: float, deposits: float, has_pos
         return f"{S.MAX_TRADES_DAY} trades today already"
     if st.get("week") == iso_week(now.date()) and st.get("trades_week", 0) >= S.MAX_TRADES_WEEK:
         return f"{S.MAX_TRADES_WEEK} trades this week already"
-    if equity < 25_000 and daytrades >= 3:
-        return "3 day trades used in 5 days (Alpaca may still apply the old PDT rule)"
     return None
 
 
@@ -329,6 +327,8 @@ def exit_decision(p: dict, mark: float, now: datetime, last_close: float | None,
     if last_close is not None and p.get("level"):
         if (p["direction"] == "call" and last_close < p["level"]) or (p["direction"] == "put" and last_close > p["level"]):
             return Exit(qty, f"setup failed: underlying closed {last_close:.2f} back through {p['level']:.2f}", "setup_stop")
+    if p["expiry"] <= now.date() and now.time() >= hm(S.EXPIRY_DAY_CLOSE):
+        return Exit(qty, "expires today (Alpaca force-sells expiring options from about 3:30 pm)", "expiry")
     if p["expiry"] <= next_trading_day and now.time() >= hm(S.EXPIRY_CLOSE):
         return Exit(qty, "expires next trading day", "expiry")
     if now.time() >= hm(S.TIME_STOP):
@@ -383,3 +383,158 @@ def go_live_ready(card: dict, rule_breaks: int) -> list:
     if rule_breaks:
         out.append(f"{rule_breaks} rule breaks")
     return out
+
+
+# ---------- order prices (patient limit orders instead of paying the full spread) ----------
+
+def sell_ladder(root: str, bid: float, ask: float, steps: int = 4) -> list:
+    """Limit prices for a patient sell: start at the mid and step down to the bid in `steps` moves
+    (at least one tick each). Empty list = no usable quote, so the caller sells at market."""
+    if bid <= 0 or ask <= 0 or ask < bid:
+        return []
+    start = round_tick(root, (bid + ask) / 2, up=True)
+    if start >= ask:
+        start = round_tick(root, ask - tick(root, ask), up=False)
+    start = max(start, bid)
+    step = max(tick(root, bid), round_tick(root, (start - bid) / steps, up=True))
+    out, p = [], start
+    while p > bid + 1e-9:
+        out.append(round(p, 2))
+        p = round(p - step, 2)
+    out.append(round(bid, 2))
+    return out
+
+
+URGENT_EXITS = ("stop", "kill", "setup_stop", "expiry", "unknown", "manual")
+
+
+def exit_is_urgent(kind: str) -> bool:
+    """Stops, kills, expiry closes and your phone 'close' sell at market right away; profit-taking,
+    trailing and time exits first try the patient limit ladder."""
+    return kind in URGENT_EXITS
+
+
+# ---------- cost log ----------
+
+def fill_cost(side: str, bid: float, ask: float, px: float) -> dict:
+    """How much a fill gave up versus the mid at the moment of the order. side: buy | sell.
+    Positive slip = paid more than mid (buy) or got less than mid (sell)."""
+    if bid <= 0 or ask <= 0 or px <= 0:
+        return {"mid": None, "slip": None, "slip_pct": None, "spread_pct": None}
+    mid = (bid + ask) / 2
+    slip = (px - mid) if side == "buy" else (mid - px)
+    return {"mid": round(mid, 4), "slip": round(slip, 4), "slip_pct": round(slip / mid, 4),
+            "spread_pct": round((ask - bid) / mid, 4)}
+
+
+def cost_report(trades: list, fee_per_contract_side: float, days_live: float) -> dict | None:
+    """Averages from the per-trade cost log. trades: closed trades with qty and the cost-log columns
+    (entry_slip, exit_slip, entry_spread_pct). None = no trade has cost data yet."""
+    rows = [t for t in trades if t.get("entry_slip") is not None]
+    if not rows:
+        return None
+    n = len(rows)
+    per_trade = []
+    for t in rows:
+        q = t.get("qty") or 0
+        slip = (t.get("entry_slip") or 0) + (t.get("exit_slip") or 0)
+        per_trade.append(slip * 100 * q + fee_per_contract_side * 2 * q)
+    avg = sum(per_trade) / n
+    per_year = n / max(days_live, 1) * 365
+    return {"trades": n,
+            "entry_slip_pct": sum(t.get("entry_slip_pct") or 0 for t in rows) / n,
+            "exit_slip_pct": sum(t.get("exit_slip_pct") or 0 for t in rows if t.get("exit_slip_pct") is not None)
+            / max(1, sum(1 for t in rows if t.get("exit_slip_pct") is not None)),
+            "spread_pct": sum(t.get("entry_spread_pct") or 0 for t in rows) / n,
+            "avg_round_trip": avg, "trades_per_year": per_year, "cost_per_year": avg * per_year}
+
+
+# ---------- grade report card ----------
+
+def grade_card(trades: list, cost_per_contract: float = 0.0) -> dict:
+    """Win rate and average result per Claude grade (A+, A, B, rules-only), after the estimated real
+    costs. trades: closed trades whose `claude` column is the JSON review saved at entry."""
+    import json
+    out: dict = {}
+    for t in trades:
+        try:
+            review = json.loads(t.get("claude") or "{}") or {}
+        except (ValueError, TypeError):
+            review = {}
+        g = "rules only" if "rules only" in str(review.get("reason") or "") else (review.get("grade") or "none")
+        pnl = (t.get("pnl") or 0) - cost_per_contract * (t.get("qty") or 0)
+        row = out.setdefault(g, {"trades": 0, "wins": 0, "net": 0.0})
+        row["trades"] += 1
+        row["wins"] += pnl > 0
+        row["net"] += pnl
+    for row in out.values():
+        row["win_rate"] = row["wins"] / row["trades"]
+        row["avg"] = row["net"] / row["trades"]
+    return out
+
+
+# ---------- phone commands ----------
+
+SAFE_COMMANDS = {"status", "help"}
+COMMANDS = {"status", "help", "pause", "resume", "close", "kill", "full", "nofull"}
+
+
+def parse_command(text: str, pin: str, age_sec: float, max_age_sec: float = 600) -> tuple:
+    """(command, problem). A command that changes anything needs the PIN somewhere in the message
+    when a PIN is set ("kill 4821", "kill 1k 4821"). Messages older than max_age_sec are ignored, so
+    an old command can never be replayed. problem is None when the command may run."""
+    words = (text or "").strip().lower().split()
+    words = [w for w in words if w != "1k"]
+    if not words:
+        return "", "empty"
+    cmd, rest = words[0], words[1:]
+    if cmd not in COMMANDS:
+        return cmd, "unknown command"
+    if age_sec > max_age_sec:
+        return cmd, f"ignored: sent {age_sec / 60:.0f} min ago"
+    if pin and cmd not in SAFE_COMMANDS and pin.lower() not in rest:
+        return cmd, "missing or wrong PIN"
+    return cmd, None
+
+
+# ---------- rebuilding memory from Alpaca ----------
+
+def parse_occ(symbol: str) -> dict | None:
+    """'NVDA261120C00190000' -> root NVDA, expiry 2026-11-20, direction call, strike 190.0."""
+    i = 0
+    while i < len(symbol) and symbol[i].isalpha():
+        i += 1
+    rest = symbol[i:]
+    if len(rest) != 15 or rest[6] not in "CP" or not rest[:6].isdigit() or not rest[7:].isdigit():
+        return None
+    return {"root": symbol[:i], "expiry": date(2000 + int(rest[:2]), int(rest[2:4]), int(rest[4:6])),
+            "direction": "call" if rest[6] == "C" else "put", "strike": int(rest[7:]) / 1000}
+
+
+def reconcile(local: dict | None, held: dict) -> tuple:
+    """Compare the bot's memory with what Alpaca actually holds. held: {option symbol: qty} for every
+    option position in the account. Returns (action, symbol): ok | adopt (Alpaca has a position the
+    memory lost) | gone (memory has a trade Alpaca no longer holds) | resize (quantities differ)."""
+    if local:
+        q = held.get(local["symbol"], 0)
+        if q == 0:
+            return "gone", local["symbol"]
+        if q != local["qty"]:
+            return "resize", local["symbol"]
+        return "ok", local["symbol"]
+    opts = [s for s, q in held.items() if q > 0 and parse_occ(s)]
+    if opts:
+        return "adopt", sorted(opts)[0]
+    return "ok", None
+
+
+def bot_buys_since(orders: list, since_iso: str) -> int:
+    """How many Portfolio 1k entries filled at or after since_iso (UTC ISO). orders: dicts with
+    client_order_id, side, status, filled_at. Used to rebuild the trade counters if memory was lost."""
+    n = 0
+    for o in orders:
+        cid = o.get("client_order_id") or ""
+        if cid.startswith("p1k-") and not cid.startswith(("p1k-stop", "p1k-exit")) and o.get("side") == "buy" \
+                and o.get("status") == "filled" and (o.get("filled_at") or "") >= since_iso:
+            n += 1
+    return n

@@ -123,7 +123,7 @@ def ingest_phone() -> int:
 
 
 def _closes(symbol: str, oldest: date, now: datetime) -> pd.Series:
-    days = max(30, (now.date() - oldest).days + 20)
+    days = max(220, (now.date() - oldest).days + 200)   # ~120 sessions before the alert, for beta
     s = B.stock_daily_closes(symbol, days=days)
     if now.hour * 60 + now.minute < 16 * 60 + 20:   # today's bar is still forming: ignore it
         s = s[s.index < pd.Timestamp(now.date())]
@@ -200,8 +200,10 @@ def fill_outcomes(now: datetime | None = None, closes_fn=None, option_fn=None) -
                 exp = date.fromisoformat(r["expiry"])
                 code = O.occ(r["symbol"], exp, r["kind"], r["strike"])
                 om = O.option_move(opt_series(code), s, day, n, exp, r["strike"], r["kind"])
-            S.update(r["id"], base=base, **{f"m_{h}": stock, f"spy_{h}": spy_move, f"v_{h}": v, f"d_{h}": str(when),
-                                             f"o_{h}": om})
+            if r.get("beta") is None and spy is not None:
+                r["beta"] = O.beta(s, spy, day)
+            S.update(r["id"], base=base, beta=r.get("beta"),
+                     **{f"m_{h}": stock, f"spy_{h}": spy_move, f"v_{h}": v, f"d_{h}": str(when), f"o_{h}": om})
             spy_txt = f", SPY {spy_move:+.1%}" if spy_move is not None else ""
             opt_txt = f"; the option {om:+.0%}" if om is not None else ""
             done.append(f"#{r['id']} {r['symbol']} {r['direction']} -> {'1 day' if h == '1d' else '1 week'}: "
@@ -251,7 +253,7 @@ def export(path: str) -> int:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="") as f:
         cols = ["id", "alert_day", "symbol", "expiry", "strike", "kind", "side", "premium", "tags", "direction",
-                "guess", "base", "m_1d", "spy_1d", "v_1d", "o_1d", "m_1w", "spy_1w", "v_1w", "o_1w", "text"]
+                "guess", "base", "beta", "m_1d", "spy_1d", "v_1d", "o_1d", "m_1w", "spy_1w", "v_1w", "o_1w", "text"]
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rs:

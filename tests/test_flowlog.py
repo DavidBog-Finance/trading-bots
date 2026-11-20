@@ -116,8 +116,8 @@ def test_scan_picks_unusual_contracts():
     picked = SC.unusual(pool, d)
     assert [c.symbol for c in picked] == ["A1", "A3"]
     a = SC.to_alert(picked[0], "ask", d)
-    assert a.direction == "bullish" and a.tags == ["scan", "vol>oi", "est-side"] and a.premium == 600_000
-    assert a.text.startswith("[scan] AAPL 12/18 230C ask $600K")
+    assert a.direction == "bullish" and a.tags == ["scan", "delayed", "vol>oi", "est-side"] and a.premium == 600_000
+    assert a.text.startswith("[scan, delayed data] AAPL 12/18 230C ask $600K")
 
 
 def test_tick_rule_side():
@@ -136,7 +136,7 @@ def test_app_scan_runs_once_after_close():
     lines = app.scan(datetime(2026, 11, 20, 16, 30, tzinfo=ET), fn)
     assert len(lines) == 1 and "bearish" in lines[0]
     assert app.scan(datetime(2026, 11, 20, 18, 30, tzinfo=ET), fn) == []         # once a day
-    assert S.rows()[0]["tags"] == ["scan", "vol>oi", "est-side"]
+    assert S.rows()[0]["tags"] == ["scan", "delayed", "vol>oi", "est-side"]
     assert app.scan(datetime(2026, 11, 21, 17, 0, tzinfo=ET), fn) == []          # Saturday
 
 
@@ -184,3 +184,21 @@ def test_option_price_is_graded_too():
     assert any("1 week: +5.0%, SPY +1.0% = right; the option +100%" in d for d in done)
     card = O.scorecard(S.rows())
     assert "The option itself" in card and "1 week avg +100%, made money 1/1" in card
+
+
+def test_beta_and_fair_edge_by_day():
+    import numpy as np
+    idx = pd.bdate_range("2026-05-01", periods=160)
+    rng = np.random.default_rng(1)
+    m = pd.Series(100 * np.cumprod(1 + rng.normal(0, 0.01, 160)), index=idx)
+    s = pd.Series(50 * np.cumprod(1 + 2 * m.pct_change().fillna(0).values), index=idx)   # moves 2x the market
+    b = O.beta(s, m, idx[-1].date())
+    assert b == pytest.approx(2.0, abs=0.05)
+    assert O.beta(s.tail(10), m.tail(10), idx[-1].date()) is None                         # too little history
+    # high-beta bullish alert on an up day: raw "right", but the fair edge is zero
+    rows = [{"direction": "bullish", "alert_day": "2026-11-02", "v_1w": "right", "m_1w": 0.04, "spy_1w": 0.02, "beta": 2.0},
+            {"direction": "bullish", "alert_day": "2026-11-02", "v_1w": "right", "m_1w": 0.06, "spy_1w": 0.02, "beta": 2.0},
+            {"direction": "bearish", "alert_day": "2026-11-03", "v_1w": "right", "m_1w": -0.03, "spy_1w": -0.01, "beta": 1.0}]
+    assert O._beta_edge(rows, "1w").startswith("+1.3%")       # (0 + 2% + 2%) / 3
+    assert O._by_day(rows, "1w").startswith("+1.5% over 2 days")   # day1 avg 1%, day2 2%
+    assert "Fair edge" in O.scorecard(rows) and "Counted by day" in O.scorecard(rows)

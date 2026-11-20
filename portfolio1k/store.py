@@ -15,6 +15,10 @@ create table if not exists trades(id integer primary key autoincrement, opened t
     cost real, equity_before real, kind text, slip real, reason text, claude text);
 create table if not exists events(ts text, kind text, text text);
 """
+# Cost log columns, added to older databases on first open.
+_COST_COLS = {"feed": "text", "entry_bid": "real", "entry_ask": "real", "entry_slip": "real", "entry_slip_pct": "real",
+              "entry_spread_pct": "real", "exit_bid": "real", "exit_ask": "real", "exit_slip": "real",
+              "exit_slip_pct": "real", "fees": "real"}
 
 
 def db() -> sqlite3.Connection:
@@ -22,6 +26,10 @@ def db() -> sqlite3.Connection:
     con = sqlite3.connect(S.DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
+    have = {r[1] for r in con.execute("pragma table_info(trades)")}
+    for col, typ in _COST_COLS.items():
+        if col not in have:
+            con.execute(f"alter table trades add column {col} {typ}")
     return con
 
 

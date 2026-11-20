@@ -36,7 +36,12 @@ From a terminal: `python -m flowlog add "AAPL 12/20 230C ask $250K sweep"`, `pyt
 - Read: call on the ask or put on the bid = bullish; put on the ask or call on the bid = bearish.
 - Base price: the stock's close on the alert day. 1 day = next close, 1 week = 5 closes later.
 - Right = the stock moved the way the read pointed. Edge vs SPY = that move minus SPY's move.
-- Under about 30 finished alerts the numbers are mostly luck.
+- Fair edge = the move minus what the market alone explains for that stock (beta x SPY's move, beta from
+  the ~120 sessions before the alert). A stock that usually moves 2x the market no longer "wins" just
+  because the market went up. This is the number to trust most.
+- Counted by day = every alert is kept, but alerts from the same day are averaged first, so one big market
+  day with 10 alerts counts once instead of 10 times.
+- Under about 30 finished alerts the numbers are mostly luck; patterns by tag or size need a few hundred days.
 
 ## Where it runs
 
@@ -49,5 +54,7 @@ After each close, `python -m flowlog run --scan` looks at your watchlist's optio
 data and logs up to 8 contracts with unusually big new volume (volume above open interest, $100K+
 traded, 1-45 days to expiry, at most 2 per stock), tagged `scan`. Alpaca's free data has no buy/sell
 flag, so the side is estimated from price ticks (tag `est-side`) and left blank when mixed.
+Alpaca's free option data is delayed and slightly altered, so scan alerts are tagged `delayed`: they show
+what happened, not real-time flow you could have traded on.
 The scorecard shows `tag scan` separately, so you can compare it with the alerts you log yourself.
 Run it now for the last closed session: `python -m flowlog scan`, or the `scan` button on GitHub.

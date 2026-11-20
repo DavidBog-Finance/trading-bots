@@ -158,7 +158,7 @@ def test_full_port_only_when_every_rule_holds():
 def test_entry_blocks():
     now = at("10:30")
     base = {"day": DAY.isoformat(), "day_start_equity": 1000, "week": R.iso_week(DAY), "week_start_equity": 1000}
-    ok = lambda st=base, eq=1000, **kw: R.entry_block(st, kw.get("now", now), eq, 1000, kw.get("pos", False), kw.get("dt", 0), kw.get("fomc", set()))
+    ok = lambda st=base, eq=1000, **kw: R.entry_block(st, kw.get("now", now), eq, 1000, kw.get("pos", False), kw.get("fomc", set()))
     assert ok() is None
     assert "KILL" in ok(eq=500)
     assert "today" in ok(eq=790)
@@ -166,7 +166,6 @@ def test_entry_blocks():
     assert "one position" in ok(pos=True)
     assert "hours" in ok(now=at("09:40")) and "hours" in ok(now=at("14:31"))
     assert "Fed" in ok(now=at("13:45"), fomc={DAY.isoformat()})
-    assert "PDT" in ok(dt=3)
     assert "trades today" in ok(st={**base, "trades_day": 2})
     assert "paused" in ok(st={**base, "paused": True})
     assert "killed" in ok(st={**base, "killed": True})
@@ -177,7 +176,7 @@ def test_losing_streak_pauses_two_days_then_standard_only():
     for _ in range(3):
         st = R.after_close(st, "loss", DAY)
     assert st["pause_until"] == "2026-11-23" and st["standard_only_left"] == 3
-    assert "paused until" in R.entry_block({**st, "day": "x"}, at("10:30", date(2026, 11, 20)), 1000, 1000, False, 0, set())
+    assert "paused until" in R.entry_block({**st, "day": "x"}, at("10:30", date(2026, 11, 20)), 1000, 1000, False, set())
     st = R.after_close(st, "win", date(2026, 11, 23))
     assert st["standard_only_left"] == 2 and st["loss_streak"] == 0
 
@@ -222,7 +221,7 @@ def test_scorecard_and_go_live():
 class Fake:
     def __init__(self):
         self.equity, self.cash = 1000.0, 1000.0
-        self.positions, self.orders = {}, {}
+        self.positions, self.orders, self.avg = {}, {}, {}
         self.is_open = True
 
     def get_account(self):
@@ -241,6 +240,13 @@ class Fake:
 
     def get_order_by_id(self, oid):
         return self.orders[oid]
+
+    def get_all_positions(self):
+        return [types.SimpleNamespace(symbol=s, qty=str(q), avg_entry_price=str(self.avg.get(s, 2.0)))
+                for s, q in self.positions.items() if q]
+
+    def get_orders(self, req):
+        return []
 
 
 @pytest.fixture
@@ -277,8 +283,9 @@ def world(monkeypatch, isolated):
         fc.orders[oid] = types.SimpleNamespace(status="accepted", filled_qty=0, filled_avg_price=None)
         return oid
 
-    def sell(client, sym, qty, bid):
+    def sell(client, sym, qty, bid, ask=0.0, urgent=True):
         log["sells"].append((sym, qty))
+        log.setdefault("urgent", []).append(urgent)
         fc.positions[sym] -= qty
         return bid
 
@@ -298,7 +305,7 @@ def test_trade_lifecycle_buy_tp1_then_stop(world):
     assert log["buys"] == [("NVDA261120C00190000", 2)]                 # 50% of $1,000 / $208 = 2 contracts
     assert log["stops"][0] == ("NVDA261120C00190000", 2, round(2.04 * 0.7, 2))
     assert any(t == "1k BUY" for t, _ in sent)
-    assert "one position" in R.entry_block(store.state(), clock["now"], 1000, 1000, True, 0, set())
+    assert "one position" in R.entry_block(store.state(), clock["now"], 1000, 1000, True, set())
     # +45%: take profit 1 sells half and moves the stop to breakeven
     clock["now"] = at("10:20")
     feed["bars"]["NVDA"] = bars([100, 100.3, 100.1, 100.2, 101.5, 102, 102.5, 103, 103.2])
@@ -366,3 +373,173 @@ def test_scorecard_subtracts_real_costs():
     assert card["paper_net"] == 54 and card["net"] == 30
     assert card["win_rate"] == pytest.approx(1 / 3) and card["profit_factor"] == pytest.approx(88 / 58)
     assert "net $30.00 after est. real costs (paper $54.00)" in runner.scorecard_line(card)
+
+
+# ---------- upgrades (2026-11-20): patient exits, cost log, stop check, rebuild from Alpaca, PIN, grades ----------
+
+def test_sell_ladder_steps_from_mid_to_bid():
+    assert R.sell_ladder("SPY", 2.00, 2.10) == [2.05, 2.03, 2.01, 2.0]
+    assert R.sell_ladder("SPY", 2.00, 2.02) == [2.01, 2.0]
+    assert R.sell_ladder("NVDA", 4.00, 4.40)[0] == 4.20 and R.sell_ladder("NVDA", 4.00, 4.40)[-1] == 4.0
+    assert R.sell_ladder("SPY", 0, 2.0) == []
+    assert R.exit_is_urgent("stop") and R.exit_is_urgent("kill") and not R.exit_is_urgent("tp1")
+
+
+def test_fill_cost_and_cost_report():
+    assert R.fill_cost("buy", 2.00, 2.10, 2.07)["slip"] == pytest.approx(0.02)
+    assert R.fill_cost("sell", 2.00, 2.10, 2.03)["slip"] == pytest.approx(0.02)
+    assert R.fill_cost("buy", 0, 2.10, 2.07)["slip"] is None
+    trades = [{"qty": 2, "entry_slip": 0.02, "exit_slip": 0.03, "entry_slip_pct": 0.01, "exit_slip_pct": 0.015,
+               "entry_spread_pct": 0.05}, {"qty": 1, "entry_slip": None}]
+    c = R.cost_report(trades, 0.05, 36.5)
+    assert c["trades"] == 1 and c["avg_round_trip"] == pytest.approx(0.05 * 100 * 2 + 0.05 * 2 * 2)
+    assert c["trades_per_year"] == pytest.approx(10) and R.cost_report([{"qty": 1}], 0.05, 10) is None
+
+
+def test_grade_card():
+    import json
+    t = lambda g, pnl, reason="x": {"pnl": pnl, "qty": 1, "claude": json.dumps({"grade": g, "reason": reason})}
+    card = R.grade_card([t("A+", 50), t("A+", -20), t("A", 10), t("A", 10, "rules only (Claude unavailable)")], 6.0)
+    assert card["A+"]["trades"] == 2 and card["A+"]["win_rate"] == 0.5 and card["A+"]["net"] == pytest.approx(18)
+    assert card["rules only"]["trades"] == 1 and card["A"]["trades"] == 1
+
+
+def test_parse_command_pin_and_age():
+    assert R.parse_command("status", "4821", 5) == ("status", None)
+    assert R.parse_command("kill 1k", "4821", 5) == ("kill", "missing or wrong PIN")
+    assert R.parse_command("Kill 1k 4821", "4821", 5) == ("kill", None)
+    assert R.parse_command("kill 4821", "4821", 900)[1].startswith("ignored")
+    assert R.parse_command("kill", "", 5) == ("kill", None)                 # no PIN set: works as before
+    assert R.parse_command("buy NVDA", "", 5)[1] == "unknown command"
+
+
+def test_parse_occ_reconcile_and_counts():
+    assert R.parse_occ("NVDA261120C00190000") == {"root": "NVDA", "expiry": date(2026, 11, 20), "direction": "call", "strike": 190.0}
+    assert R.parse_occ("SPY") is None
+    p = {"symbol": "NVDA261120C00190000", "qty": 2}
+    assert R.reconcile(p, {"NVDA261120C00190000": 2}) == ("ok", "NVDA261120C00190000")
+    assert R.reconcile(p, {}) == ("gone", "NVDA261120C00190000")
+    assert R.reconcile(p, {"NVDA261120C00190000": 1})[0] == "resize"
+    assert R.reconcile(None, {"QQQ261120P00500000": 1}) == ("adopt", "QQQ261120P00500000")
+    orders = [{"client_order_id": "p1k-abc", "side": "buy", "status": "filled", "filled_at": "2026-11-20T15:00:00+00:00"},
+              {"client_order_id": "p1k-stop-x", "side": "sell", "status": "filled", "filled_at": "2026-11-20T16:00:00+00:00"},
+              {"client_order_id": "p1k-def", "side": "buy", "status": "filled", "filled_at": "2026-11-18T15:00:00+00:00"},
+              {"client_order_id": "other", "side": "buy", "status": "filled", "filled_at": "2026-11-20T15:00:00+00:00"}]
+    assert R.bot_buys_since(orders, "2026-11-20T05:00:00+00:00") == 1
+    assert R.bot_buys_since(orders, "2026-11-16T05:00:00+00:00") == 2
+
+
+def test_expiry_day_close_at_3pm():
+    p = {"entry": 2.0, "qty": 1, "tier": "standard", "direction": "call", "level": None, "expiry": DAY,
+         "tp1_done": False, "high": 2.0, "stop": 1.4}
+    assert R.exit_decision(p, 2.1, at("14:55"), None, date(2026, 11, 19)) is None
+    assert R.exit_decision(p, 2.1, at("15:00"), None, date(2026, 11, 19)).kind == "expiry"
+
+
+def test_cost_log_written_and_patient_exit(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    with store.db() as con:
+        row = dict(con.execute("select * from trades").fetchone())
+    # contract quote 2.00 x 2.08, filled at 2.04 = exactly the mid; spread 0.08 / 2.04
+    assert row["entry_bid"] == 2.00 and row["entry_slip"] == pytest.approx(0) and row["feed"] == S.OPTION_FEED
+    assert row["entry_spread_pct"] == pytest.approx(0.08 / 2.04, abs=1e-4)
+    clock["now"] = at("10:20")
+    feed["bars"]["NVDA"] = bars([100, 100.3, 100.1, 100.2, 101.5, 102, 102.5, 103, 103.2])
+    feed["quote"] = (2.94, 2.98)
+    r.tick()
+    assert log["urgent"] == [False]                                 # take profit uses the patient ladder
+    p = store.get("position")
+    assert p["exit_q"] == 1 and p["exit_slip_q"] == pytest.approx(0.02)
+    r.handle("close")
+    assert log["urgent"][-1] is True                                # your 'close' sells at market
+    t = store.closed_trades()[0]
+    assert t["exit_slip"] is not None and t["fees"] == pytest.approx(0.2)
+    assert "Costs (" in runner.cost_line(store.closed_trades())
+    assert "Grades: A:" in runner.grade_lines(store.closed_trades())
+
+
+def test_missing_stop_alerts_once(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    p = store.get("position")
+    fc.orders[p["stop_id"]] = types.SimpleNamespace(status="canceled", filled_qty=0, filled_avg_price=None)
+    alerts = []
+    monkeypatch.setattr(B, "alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr(trader, "place_stop", lambda *a: None)
+    clock["now"] = at("10:00")
+    r.tick()
+    r.tick()
+    assert sum("No stop order" in a for a in alerts) == 1
+
+
+def test_startup_adopts_a_position_the_memory_lost(world):
+    fc, clock, feed, log, sent = world
+    fc.positions["NVDA261120C00190000"] = 2
+    fc.avg["NVDA261120C00190000"] = 2.10
+    r = runner.Runner(fc)
+    r.startup()
+    p = store.get("position")
+    assert p["qty"] == 2 and p["entry"] == 2.10 and p["setup"] == "recovered" and p["stop"] == round(2.10 * 0.7, 2)
+    assert any(t == "1k Recovered trade" for t, _ in sent)
+    fc.positions["NVDA261120C00190000"] = 1
+    runner.Runner(fc).startup()
+    assert store.get("position")["qty"] == 1
+
+
+def test_phone_command_needs_pin(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    import io, json, time as _t
+    monkeypatch.setattr(C, "CONTROL_TOPIC", "t")
+    monkeypatch.setattr(S, "CONTROL_PIN", "4821")
+    msgs = [{"event": "message", "id": "a", "time": _t.time(), "message": "pause 1k"}]
+    monkeypatch.setattr(runner.urllib.request, "urlopen", lambda url, timeout=10: io.BytesIO("\n".join(json.dumps(m) for m in msgs).encode()))
+    r = runner.Runner(fc)
+    r.commands()
+    assert not store.state().get("paused") and any(t == "1k Command ignored" for t, _ in sent)
+    msgs[0] = {"event": "message", "id": "b", "time": _t.time(), "message": "pause 1k 4821"}
+    r.last_cmd = 0
+    r.commands()
+    assert store.state().get("paused")
+
+
+def test_trader_sell_ladder_then_market(monkeypatch):
+    """A patient sell steps the limit down; whatever is still unsold goes out at market."""
+    monkeypatch.setattr(C, "DRY_RUN", False)
+    monkeypatch.setattr(trader.time, "sleep", lambda s: None)
+    clock = {"t": 0.0}
+    monkeypatch.setattr(trader.time, "time", lambda: clock.__setitem__("t", clock["t"] + 3) or clock["t"])
+    calls = []
+
+    class Cl:
+        def __init__(self):
+            self.o = {}
+
+        def submit_order(self, req):
+            oid = f"o{len(self.o)}"
+            kind = type(req).__name__
+            calls.append((kind, getattr(req, "limit_price", None), req.qty))
+            filled = 1 if kind == "LimitOrderRequest" else req.qty
+            self.o[oid] = types.SimpleNamespace(id=oid, status="new" if kind == "LimitOrderRequest" else "filled",
+                                                filled_qty=0 if kind == "LimitOrderRequest" else filled,
+                                                filled_avg_price=None if kind == "LimitOrderRequest" else 1.95)
+            return self.o[oid]
+
+        def get_order_by_id(self, oid):
+            return self.o[oid]
+
+        def replace_order_by_id(self, oid, req):
+            calls.append(("replace", req.limit_price, None))
+            return self.o[oid]
+
+        def cancel_order_by_id(self, oid):
+            o = self.o[oid]
+            o.status, o.filled_qty, o.filled_avg_price = "canceled", 1, 2.03   # 1 of 2 filled before the cancel
+
+    px = trader.sell(Cl(), "SPY261120C00500000", 2, 2.00, 2.10, urgent=False)
+    assert calls[0] == ("LimitOrderRequest", 2.05, 2)
+    assert [c[1] for c in calls if c[0] == "replace"] == [2.03, 2.01, 2.0]
+    assert calls[-1] == ("MarketOrderRequest", None, 1)
+    assert px == pytest.approx((2.03 + 1.95) / 2)

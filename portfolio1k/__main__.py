@@ -16,8 +16,12 @@ def main():
                     help="exit after this many minutes or at 16:20 New York (GitHub Actions); omit to run forever")
     a = ap.parse_args()
     if a.cmd == "scorecard":
-        card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
+        trades = store.closed_trades()
+        card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
         print(runner.scorecard_line(card))
+        for line in (runner.cost_line(trades), runner.grade_lines(trades)):
+            if line:
+                print(line)
         todo = R.go_live_ready(card, 0)
         print("Go-live bars still open:", ", ".join(todo) if todo else "none, all met")
         return
@@ -25,6 +29,7 @@ def main():
     if a.cmd == "run":
         r.run(a.max_minutes)
     elif a.cmd == "once":
+        r.startup()
         r.tick_safely()
     elif a.cmd == "status":
         txt = r.status_text()

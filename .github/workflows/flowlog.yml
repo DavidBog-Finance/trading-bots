@@ -30,6 +30,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
   group: flow-log
   cancel-in-progress: false

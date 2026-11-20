@@ -2,7 +2,12 @@
 
 "Base" is the stock's close on the alert day (or the last close before it, for weekend alerts).
 "1 day" is the next session's close, "1 week" the close 5 sessions later. Each move is also shown
-next to SPY's move over the same days, because a call alert in a rising market proves little."""
+next to SPY's move over the same days, because a call alert in a rising market proves little.
+
+The fair yardstick is the BETA-ADJUSTED edge: the stock's move minus (its beta x SPY's move), signed in
+the alert's direction. A stock that usually moves 2x the market "wins" on every up day for a bullish
+alert; the beta adjustment takes that free ride out. Results are also shown counted BY DAY (alerts on
+the same day averaged into one number), because ten alerts on one big market day are really one result."""
 from datetime import date
 
 import pandas as pd
@@ -53,6 +58,19 @@ def option_move(opt: pd.Series, stock: pd.Series, day: date, sessions: int, expi
     return value / base - 1
 
 
+def beta(stock: pd.Series, spy: pd.Series, day: date, window: int = 120, min_obs: int = 30) -> float | None:
+    """How much the stock usually moves per 1% move in SPY, from daily returns BEFORE the alert day
+    (so nothing after the alert leaks in). None if there is not enough history."""
+    if stock is None or spy is None or stock.empty or spy.empty:
+        return None
+    a = stock[stock.index < pd.Timestamp(day)].pct_change()
+    b = spy[spy.index < pd.Timestamp(day)].pct_change()
+    df = pd.concat([a, b], axis=1, keys=["s", "m"]).dropna().tail(window)
+    if len(df) < min_obs or df["m"].var() == 0:
+        return None
+    return float(df["s"].cov(df["m"]) / df["m"].var())
+
+
 def pct(base: float, later: float) -> float:
     return later / base - 1 if base else 0.0
 
@@ -84,6 +102,35 @@ def _avg_edge(rows: list, h: str) -> str:
     return f"{sum(vals) / len(vals):+.1%}" if vals else "-"
 
 
+def _signed_beta_edge(r: dict, h: str) -> float | None:
+    """Move in the alert's direction minus beta x SPY's move (beta 1 when unknown)."""
+    if r.get(f"v_{h}") not in ("right", "wrong") or r.get(f"m_{h}") is None:
+        return None
+    sign = 1 if r["direction"] == "bullish" else -1
+    b = r.get("beta") if r.get("beta") is not None else 1.0
+    return sign * (r[f"m_{h}"] - b * (r.get(f"spy_{h}") or 0.0))
+
+
+def _beta_edge(rows: list, h: str) -> str:
+    vals = [v for v in (_signed_beta_edge(r, h) for r in rows) if v is not None]
+    if not vals:
+        return "-"
+    return f"{sum(vals) / len(vals):+.1%} (beat the market-adjusted move {sum(v > 0 for v in vals)}/{len(vals)})"
+
+
+def _by_day(rows: list, h: str) -> str:
+    """Same edge, but every trading day counts once: alerts on one day are averaged first."""
+    days: dict[str, list] = {}
+    for r in rows:
+        v = _signed_beta_edge(r, h)
+        if v is not None:
+            days.setdefault(r.get("alert_day") or "", []).append(v)
+    if not days:
+        return "-"
+    avgs = [sum(v) / len(v) for v in days.values()]
+    return f"{sum(avgs) / len(avgs):+.1%} over {len(avgs)} days (positive on {sum(a > 0 for a in avgs)}/{len(avgs)} days)"
+
+
 def _opt(rows: list, h: str) -> str:
     vals = [r[f"o_{h}"] for r in rows if r.get(f"o_{h}") is not None]
     if not vals:
@@ -110,6 +157,10 @@ def scorecard(rows: list) -> str:
     out = [f"{len(rows)} alerts logged. Right = stock moved the way the flow pointed.",
            f"All:  1 day {_rate(rows, 'v_1d')}, 1 week {_rate(rows, 'v_1w')}, "
            f"edge vs SPY 1 week {_avg_edge(rows, '1w')}",
+           f"Fair edge (minus what the market alone explains, using each stock's beta): "
+           f"1 day {_beta_edge(rows, '1d')}; 1 week {_beta_edge(rows, '1w')}",
+           f"Counted by day (each day once, so one big market day can't count 10 times): "
+           f"1 week {_by_day(rows, '1w')}",
            f"The option itself (bought at the alert-day close): 1 day {_opt(rows, '1d')}; 1 week {_opt(rows, '1w')}"]
     groups: dict[str, list] = {}
     for r in rows:
@@ -121,7 +172,7 @@ def scorecard(rows: list) -> str:
         g = groups[name]
         if any(x.get("v_1w") in ("right", "wrong") or x.get("v_1d") in ("right", "wrong") for x in g):
             out.append(f"{name}: 1d {_rate(g, 'v_1d')}, 1w {_rate(g, 'v_1w')}, edge 1w {_avg_edge(g, '1w')}, "
-                       f"option 1w {_opt(g, '1w')}")
+                       f"fair edge 1w {_beta_edge(g, '1w')}, option 1w {_opt(g, '1w')}")
     guessed = [r for r in rows if r.get("guess")]
     if guessed:
         agree = sum((r["guess"] == "bull") == (r["direction"] == "bullish") for r in guessed
@@ -134,6 +185,10 @@ def scorecard(rows: list) -> str:
         out.append(f"Your guesses: matched the flow read {agree}/{len(guessed)}; "
                    f"right 1d {_rate(mine, 'v_1d')}, 1w {_rate(mine, 'v_1w')}")
     n = sum(r.get("v_1w") in ("right", "wrong") for r in rows)
+    days = len({r.get("alert_day") for r in rows if r.get("v_1w") in ("right", "wrong")})
     if n < 30:
         out.append(f"Only {n} alerts have a 1-week result. Under ~30 this is mostly luck; keep logging.")
+    elif days < 100:
+        out.append(f"{days} different days have a 1-week result. Patterns you spot by tag or size need far more "
+                   f"(a few hundred days) before they mean much; treat them as ideas to test, not proof.")
     return "\n".join(out)

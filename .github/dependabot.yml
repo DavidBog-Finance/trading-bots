@@ -1,0 +1,12 @@
+# Keeps the GitHub Actions steps (checkout, setup-python, cache, ...) on their current versions.
+# Once a month Dependabot opens a pull request if one is out of date; the tests run on it and you merge
+# it from the GitHub app. Older versions stop working when GitHub retires the Node version they use.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

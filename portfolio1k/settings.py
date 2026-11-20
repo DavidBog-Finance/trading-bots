@@ -59,6 +59,7 @@ PULLBACK_START = "10:00"
 NEWS_START = "09:45"
 ENTRY_END = "14:30"
 EXPIRY_CLOSE = "15:30"                   # close anything expiring next trading day
+EXPIRY_DAY_CLOSE = "15:00"               # and anything expiring TODAY by 3 pm (Alpaca force-sells from ~3:30)
 TIME_STOP = "15:45"
 SUMMARY = "16:15"
 LOOP_SEC = _f("LOOP_SEC", 15)
@@ -68,4 +69,13 @@ LOOP_SEC = _f("LOOP_SEC", 15)
 FOMC_DAYS = set(_l("FOMC_DAYS", "2026-12-09"))
 
 USE_CLAUDE = _b("USE_CLAUDE", True)
+
+# Option quotes: "indicative" is Alpaca's free feed (delayed trades, slightly altered quotes); "opra" needs
+# the $99/month plan and a signed agreement. Named explicitly because Alpaca changed the default on 2026-11-10.
+OPTION_FEED = (os.getenv("P1K_OPTION_FEED", "") or "indicative").strip().lower()
+# Estimated exchange/regulatory fees per contract per side, used by the cost log (Alpaca passes these through).
+FEE_PER_CONTRACT_SIDE = _f("FEE_PER_CONTRACT_SIDE", 0.05)
+# Phone commands that change anything (pause, resume, close, kill, full, nofull) need this PIN in the message
+# when it is set, e.g. "kill 4821". Set it as the GitHub secret CONTROL_PIN. status and help never need it.
+CONTROL_PIN = (os.getenv("CONTROL_PIN", "") or "").strip()
 DB_PATH = os.getenv("P1K_DB", os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "portfolio1k.db"))

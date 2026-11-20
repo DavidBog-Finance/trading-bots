@@ -1,4 +1,5 @@
-"""Order handling for Portfolio 1k: patient limit buys, a stop at Alpaca, market exits.
+"""Order handling for Portfolio 1k: patient limit buys, a stop at Alpaca, patient limit exits
+(market orders only for stops, kills and expiry closes).
 Alpaca options orders are DAY orders only, so the protective stop is placed again every morning
 for any position held overnight (runner.ensure_stop)."""
 import time
@@ -72,7 +73,7 @@ def place_stop(client, symbol: str, root: str, qty: int, stop_price: float) -> s
                                                  client_order_id=f"p1k-stop-{uuid.uuid4().hex[:10]}"))
         return str(o.id)
     except Exception as e:
-        B.alert(f"[1k] Could not place the stop for {symbol} ({e}). The program still checks it every {int(15)} s while running.")
+        B.log.warning("[1k] could not place the stop for %s: %s", symbol, e)
         return None
 
 
@@ -94,6 +95,51 @@ def stop_filled(client, oid: str | None) -> tuple[int, float]:
     return 0, 0.0
 
 
+def stop_state(client, oid: str | None) -> tuple:
+    """(resting at Alpaca?, contracts on the order or None if unknown)."""
+    if not oid or C.DRY_RUN or oid == "dry-run-stop":
+        return bool(oid), None
+    try:
+        o = client.get_order_by_id(oid)
+    except Exception:
+        return False, None
+    q = getattr(o, "qty", None)
+    return _status(o) in ("new", "accepted", "pending_new", "held", "partially_filled"), int(float(q)) if q else None
+
+
+def open_stop_for(client, symbol: str) -> str | None:
+    """The id of a sell-stop already resting at Alpaca for this contract (used after memory was lost)."""
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+    try:
+        for o in client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol], limit=50)):
+            if str(getattr(o.type, "value", o.type)).lower() in ("stop", "stop_limit") and \
+                    str(getattr(o.side, "value", o.side)).lower() == "sell":
+                return str(o.id)
+    except Exception as e:
+        B.log.info("[1k] open orders lookup failed: %s", e)
+    return None
+
+
+def recent_orders(client, since) -> list:
+    """Closed orders since a UTC datetime, as plain dicts (for rebuilding counters and exit prices)."""
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+    try:
+        rows = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.CLOSED, after=since, limit=200))
+    except Exception as e:
+        B.log.info("[1k] order history lookup failed: %s", e)
+        return []
+    out = []
+    for o in rows:
+        fa = getattr(o, "filled_at", None)
+        out.append({"symbol": o.symbol, "client_order_id": o.client_order_id or "",
+                    "side": str(getattr(o.side, "value", o.side)).lower(), "status": _status(o),
+                    "filled_at": fa.isoformat() if hasattr(fa, "isoformat") else (fa or ""),
+                    "qty": float(o.filled_qty or 0), "price": float(o.filled_avg_price or 0)})
+    return out
+
+
 def stop_active(client, oid: str | None) -> bool:
     if not oid or C.DRY_RUN or oid == "dry-run-stop":
         return bool(oid)
@@ -103,15 +149,47 @@ def stop_active(client, oid: str | None) -> bool:
         return False
 
 
-def sell(client, symbol: str, qty: int, bid: float) -> float:
-    """Market sell to close; returns the fill price (bid in a dry run)."""
-    if C.DRY_RUN:
-        B.log.info("[1k] DRY RUN sell %d %s @ ~%.2f", qty, symbol, bid)
-        return bid
+def _market_sell(client, symbol: str, qty: int):
     o = client.submit_order(MarketOrderRequest(symbol=symbol, qty=qty, side=OrderSide.SELL, time_in_force=TimeInForce.DAY,
                                                position_intent=PositionIntent.SELL_TO_CLOSE,
                                                client_order_id=f"p1k-exit-{uuid.uuid4().hex[:10]}"))
     o = _wait(client, o.id, 30)
     if _status(o) != "filled":
         B.alert(f"[1k] Exit order for {symbol} is {_status(o)} after 30 s. Check Alpaca.")
-    return float(o.filled_avg_price or bid or 0)
+    return int(float(o.filled_qty or 0)), float(o.filled_avg_price or 0)
+
+
+def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bool = True) -> float:
+    """Sell to close; returns the average fill price (bid in a dry run).
+    urgent (stops, kills, expiry): market order at once. Otherwise a patient limit ladder from the mid
+    down to the bid, about 5 s per step, then market for anything still unsold."""
+    if C.DRY_RUN:
+        B.log.info("[1k] DRY RUN sell %d %s @ ~%.2f", qty, symbol, bid)
+        return bid
+    ladder = [] if urgent else R.sell_ladder((R.parse_occ(symbol) or {}).get("root", symbol), bid, ask)
+    done, value = 0, 0.0
+    if ladder:
+        o = client.submit_order(LimitOrderRequest(symbol=symbol, qty=qty, side=OrderSide.SELL, limit_price=ladder[0],
+                                                  time_in_force=TimeInForce.DAY, position_intent=PositionIntent.SELL_TO_CLOSE,
+                                                  client_order_id=f"p1k-exit-{uuid.uuid4().hex[:10]}"))
+        for nxt in [*ladder[1:], None]:
+            o = _wait(client, o.id, 5)
+            if _status(o) in ("filled", "canceled", "expired", "rejected") or nxt is None:
+                break
+            try:
+                o = client.replace_order_by_id(o.id, ReplaceOrderRequest(limit_price=nxt))
+            except Exception as e:
+                B.log.info("[1k] could not lower the sell limit: %s", e)
+                break
+        if _status(o) not in ("filled", "canceled", "expired", "rejected"):
+            try:
+                client.cancel_order_by_id(o.id)
+            except Exception:
+                pass
+            o = _wait(client, o.id, 5)
+        done = int(float(o.filled_qty or 0))
+        value = done * float(o.filled_avg_price or 0)
+    if done < qty:
+        q, px = _market_sell(client, symbol, qty - done)
+        done, value = done + q, value + q * px
+    return value / done if done else float(bid or 0)

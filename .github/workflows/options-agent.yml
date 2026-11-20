@@ -72,12 +72,12 @@ jobs:
       P1K_WATCHLIST: ${{ vars.P1K_WATCHLIST }}
       P1K_FOMC_DAYS: ${{ vars.P1K_FOMC_DAYS }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: pip install -r requirements.txt
@@ -85,7 +85,7 @@ jobs:
       - run: python -m pytest -q tests          # never trade on broken code
 
       - name: Restore memory
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             logs/portfolio1k.db
@@ -115,7 +115,7 @@ jobs:
 
       - name: Export memory (for moving to your own computer; kept 3 days)
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'export-memory'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: portfolio1k-memory
           path: |
@@ -125,7 +125,7 @@ jobs:
 
       - name: Save memory
         if: always() && hashFiles('logs/portfolio1k.db') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             logs/portfolio1k.db

@@ -48,7 +48,13 @@ jobs:
       ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
       I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
       NET_DEPOSITS_OVERRIDE: ${{ vars.NET_DEPOSITS_OVERRIDE }}
-      CLAUDE_BACKEND: pro
+      # pro = your Claude plan via CLAUDE_CODE_OAUTH_TOKEN. api = pay-per-use API key (secret ANTHROPIC_API_KEY,
+      # model in variable AGENT_MODEL, daily cap in CLAUDE_DAILY_BUDGET_USD). Switch with the variable CLAUDE_BACKEND.
+      CLAUDE_BACKEND: ${{ vars.CLAUDE_BACKEND || 'pro' }}
+      ANTHROPIC_API_KEY: ${{ vars.CLAUDE_BACKEND == 'api' && secrets.ANTHROPIC_API_KEY || '' }}
+      AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-5-5' }}
+      NEWS_MODEL: ${{ vars.AGENT_MODEL || 'claude-opus-5-5' }}
+      CLAUDE_DAILY_BUDGET_USD: ${{ vars.CLAUDE_DAILY_BUDGET_USD || '1.00' }}
       CLAUDE_CODE_MODEL: ${{ vars.CLAUDE_CODE_MODEL }}
       CLAUDE_CALLS_PER_HOUR: ${{ vars.CLAUDE_CALLS_PER_HOUR || '20' }}
       LOCAL_LLM_ENABLED: "false"

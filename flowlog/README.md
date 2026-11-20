@@ -18,6 +18,9 @@ Share > Add to Home Screen, then tap that icon, type one alert per line in the b
 - `guess bull` / `guess bear` records your own read, so the scorecard can grade you too.
 - Tags it understands: sweep, repeated, multi-leg, block, split, vol>oi, opening, late, oseq, golden, floor.
 
+1-day results arrive after each close. 1-week results are saved up and sent together with the scorecard
+on Friday evening (after about 5:20 pm New York time, 2:20 pm in California).
+
 Words you can send instead: `report`, `list`, `delete 12`, `help`.
 Replies arrive in your normal alerts topic.
 

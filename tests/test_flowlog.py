@@ -148,3 +148,17 @@ def test_catch_up_scan_uses_last_closed_session():
     lines = app.scan(datetime(2026, 11, 20, 1, 0, tzinfo=ET), fn, catch_up=True)
     assert seen == [date(2026, 11, 19)] and "unclear" in lines[0]
     assert S.rows()[0]["alert_day"] == "2026-11-19"
+
+
+def test_week_results_wait_for_friday(monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "say", lambda text, title="Flow log": sent.append((title, text)))
+    app.add_text("AAPL 12/18 230C ask $600K sweep", datetime(2026, 11, 16, 11, 0, tzinfo=ET))
+    data = {"AAPL": _closes([100, 101, 99, 98, 97, 105]), "SPY": _closes([600, 601, 602, 603, 604, 606])}
+    fn = lambda sym, oldest, now: data[sym]
+    monkeypatch.setattr(app, "_closes", fn)
+    app.run_once(datetime(2026, 11, 23, 17, 0, tzinfo=ET))           # Monday: both results filled
+    assert [t for t, _ in sent] == ["Flow results"] and "1 day" in sent[0][1] and "1 week" not in sent[0][1]
+    app.run_once(datetime(2026, 11, 27, 17, 30, tzinfo=ET))          # Friday evening
+    assert sent[-1][0] == "Flow weekly results" and "1 week: +5.0%" in sent[-1][1] and "Right =" in sent[-1][1]
+    assert S.get("week_queue") == []

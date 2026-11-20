@@ -232,13 +232,19 @@ def run_once(now: datetime | None = None, scan_too: bool = False):
         except Exception as e:
             B.log.warning("flow scan failed: %s", e)
     done = fill_outcomes(now)
-    if done:
-        say("\n".join(done[:20]) + (f"\n...and {len(done) - 20} more" if len(done) > 20 else ""), "Flow results")
+    daily = [d for d in done if "-> 1 week" not in d]
+    if daily:
+        say("\n".join(daily[:20]) + (f"\n...and {len(daily) - 20} more" if len(daily) > 20 else ""), "Flow results")
+    # 1-week results are saved up and sent together on Friday evening with the scorecard
+    S.put("week_queue", (S.get("week_queue") or []) + [d for d in done if "-> 1 week" in d])
     now = now or now_et()
     week = now.strftime("%G-W%V")
     if now.weekday() == 4 and now.hour >= 17 and S.get("weekly_sent") != week and S.rows():
         S.put("weekly_sent", week)
-        say(O.scorecard(S.rows()), "Flow weekly scorecard")
+        queued = S.get("week_queue") or []
+        S.put("week_queue", [])
+        head = ("1-week results this week:\n" + "\n".join(queued[:25]) + "\n\n") if queued else ""
+        say(head + O.scorecard(S.rows()), "Flow weekly results")
     B.log.info("flow log: %d alerts stored, %d results filled", len(S.rows()), len(done))
 
 

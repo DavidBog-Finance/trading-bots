@@ -1,7 +1,8 @@
 # FLOW LOG: a learning notebook for options-flow alerts (Unusual Whales or anywhere). It never trades.
 # You send alerts from your phone (Safari: ntfy.sh/<FLOW_TOPIC name>) (one per line, e.g. "AAPL 12/20 230C ask $250K sweep").
 # Every 2 hours this job reads them, and after each close it fills in what the stock did 1 trading day and
-# 1 trading week later, next to SPY. Results and a Friday scorecard arrive in your normal ntfy alerts.
+# 1 trading week later, next to SPY. 1-day results come after each close; 1-week results and the scorecard
+# come together on Friday evening, in your normal ntfy alerts.
 # After each close it also scans your watchlist's options for unusually big new volume (free Alpaca data)
 # and logs the top few automatically, tagged "scan" (see flowlog/scan.py).
 #

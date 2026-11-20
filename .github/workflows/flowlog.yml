@@ -1,5 +1,5 @@
 # FLOW LOG: a learning notebook for options-flow alerts (Unusual Whales or anywhere). It never trades.
-# You send alerts from your phone to the ntfy topic FLOW_TOPIC (one per line, e.g. "AAPL 12/20 230C ask $250K sweep").
+# You send alerts from your phone (Safari: ntfy.sh/<FLOW_TOPIC name>) (one per line, e.g. "AAPL 12/20 230C ask $250K sweep").
 # Every 2 hours this job reads them, and after each close it fills in what the stock did 1 trading day and
 # 1 trading week later, next to SPY. Results and a Friday scorecard arrive in your normal ntfy alerts.
 #

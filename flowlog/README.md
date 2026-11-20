@@ -6,7 +6,8 @@ It never trades.
 
 ## Log an alert
 
-From your iPhone: open the ntfy app, open your FLOW_TOPIC, type one alert per line and send.
+From your iPhone: the ntfy app only receives, so send from Safari. Open `ntfy.sh/<your FLOW_TOPIC name>`,
+Share > Add to Home Screen, then tap that icon, type one alert per line in the box at the bottom and send.
 
     AAPL 12/20 230C ask $250K sweep
     TSLA 11/28 350 put bid 1.2M repeated

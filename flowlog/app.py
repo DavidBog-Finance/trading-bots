@@ -1,7 +1,8 @@
 """Flow log jobs: read alerts you send from your phone, fill in what the stock did, push results.
 Network (ntfy, Alpaca daily bars) lives here; parse.py and outcomes.py stay pure.
 
-Phone: send to your FLOW_TOPIC in the ntfy app (one alert per line), or one of these words:
+Phone: open ntfy.sh/<FLOW_TOPIC> in Safari (the iPhone app only receives) and send one alert per line,
+or one of these words:
     report         scorecard so far
     list           the last 10 alerts with their numbers
     delete 12      remove alert #12 (a typo)

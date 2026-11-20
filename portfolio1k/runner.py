@@ -379,7 +379,7 @@ class Runner:
             flags.append("full port off")
         if flags:
             lines.append("Flags: " + ", ".join(flags))
-        card = R.scorecard(store.closed_trades())
+        card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
         lines.append(scorecard_line(card))
         return "\n".join(lines)
 
@@ -392,7 +392,7 @@ class Runner:
         traded = any(t["closed"] and t["closed"][:10] >= (now - timedelta(days=1)).date().isoformat() for t in store.closed_trades())
         if traded or self.st.get("trades_day") or self.st.get("problem_day") == today or now.weekday() == 4:
             title = "Weekly scorecard" if now.weekday() == 4 else "Daily summary"
-            card = R.scorecard(store.closed_trades())
+            card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
             extra = ""
             if now.weekday() == 4:
                 todo = R.go_live_ready(card, 0)
@@ -475,5 +475,5 @@ def scorecard_line(card: dict) -> str:
         return "No closed trades yet."
     pf = "inf" if card["profit_factor"] == float("inf") else f"{card['profit_factor']:.2f}"
     slip = f", stop slip {card['avg_stop_slip']:.0f} pts" if card["avg_stop_slip"] is not None else ""
-    return (f"{card['trades']} trades, win {card['win_rate']:.0%}, profit factor {pf}, net {fmt_money(card['net'])}, "
-            f"max DD {card['max_drawdown']:.0%}{slip}")
+    return (f"{card['trades']} trades, win {card['win_rate']:.0%}, profit factor {pf}, net {fmt_money(card['net'])} "
+            f"after est. real costs (paper {fmt_money(card['paper_net'])}), max DD {card['max_drawdown']:.0%}{slip}")

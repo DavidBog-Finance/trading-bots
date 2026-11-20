@@ -130,10 +130,27 @@ def _closes(symbol: str, oldest: date, now: datetime) -> pd.Series:
     return s
 
 
-def fill_outcomes(now: datetime | None = None, closes_fn=None) -> list[str]:
+def _option_closes(code: str, oldest: date, now: datetime) -> pd.Series:
+    from alpaca.data.historical.option import OptionHistoricalDataClient
+    from alpaca.data.requests import OptionBarsRequest
+    from alpaca.data.timeframe import TimeFrame
+    start = datetime(oldest.year, oldest.month, oldest.day) - pd.Timedelta(days=7)
+    bars = OptionHistoricalDataClient(C.ALPACA_API_KEY, C.ALPACA_SECRET_KEY).get_option_bars(
+        OptionBarsRequest(symbol_or_symbols=code, timeframe=TimeFrame.Day, start=start))
+    rows = bars.data.get(code, [])
+    s = pd.Series([float(b.close) for b in rows],
+                  index=pd.to_datetime([b.timestamp for b in rows], utc=True).tz_convert("America/New_York")
+                  .normalize().tz_localize(None), dtype=float)
+    if now.hour * 60 + now.minute < 16 * 60 + 20:
+        s = s[s.index < pd.Timestamp(now.date())]
+    return s
+
+
+def fill_outcomes(now: datetime | None = None, closes_fn=None, option_fn=None) -> list[str]:
     """Fill 1-day / 1-week results that are now known. Returns lines for newly finished ones."""
     now = now or now_et()
     closes_fn = closes_fn or _closes
+    option_fn = option_fn or _option_closes
     todo = S.rows("v_1d is null or v_1w is null")
     if not todo:
         return []
@@ -148,6 +165,17 @@ def fill_outcomes(now: datetime | None = None, closes_fn=None) -> list[str]:
                 B.log.warning("closes for %s failed: %s", sym, e)
                 cache[sym] = None
         return cache[sym]
+
+    opts: dict[str, pd.Series | None] = {}
+
+    def opt_series(code):
+        if code not in opts:
+            try:
+                opts[code] = option_fn(code, oldest, now)
+            except Exception as e:
+                B.log.warning("option prices failed: %s", type(e).__name__)
+                opts[code] = None
+        return opts[code]
 
     spy = series("SPY")
     done = []
@@ -167,10 +195,17 @@ def fill_outcomes(now: datetime | None = None, closes_fn=None) -> list[str]:
             sm = O.move(spy, day, n) if spy is not None else None
             spy_move = O.pct(sm[0], sm[1]) if sm else None
             v = O.verdict(r["direction"], stock, spy_move)
-            S.update(r["id"], base=base, **{f"m_{h}": stock, f"spy_{h}": spy_move, f"v_{h}": v, f"d_{h}": str(when)})
+            om = None
+            if r.get("expiry") and r.get("strike") and r.get("kind"):
+                exp = date.fromisoformat(r["expiry"])
+                code = O.occ(r["symbol"], exp, r["kind"], r["strike"])
+                om = O.option_move(opt_series(code), s, day, n, exp, r["strike"], r["kind"])
+            S.update(r["id"], base=base, **{f"m_{h}": stock, f"spy_{h}": spy_move, f"v_{h}": v, f"d_{h}": str(when),
+                                             f"o_{h}": om})
             spy_txt = f", SPY {spy_move:+.1%}" if spy_move is not None else ""
+            opt_txt = f"; the option {om:+.0%}" if om is not None else ""
             done.append(f"#{r['id']} {r['symbol']} {r['direction']} -> {'1 day' if h == '1d' else '1 week'}: "
-                        f"{stock:+.1%}{spy_txt} = {v}")
+                        f"{stock:+.1%}{spy_txt} = {v}{opt_txt}")
     return done
 
 
@@ -216,7 +251,7 @@ def export(path: str) -> int:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="") as f:
         cols = ["id", "alert_day", "symbol", "expiry", "strike", "kind", "side", "premium", "tags", "direction",
-                "guess", "base", "m_1d", "spy_1d", "v_1d", "m_1w", "spy_1w", "v_1w", "text"]
+                "guess", "base", "m_1d", "spy_1d", "v_1d", "o_1d", "m_1w", "spy_1w", "v_1w", "o_1w", "text"]
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         for r in rs:

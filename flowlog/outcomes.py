@@ -23,6 +23,36 @@ def move(closes: pd.Series, day: date, sessions: int) -> tuple[float, float, dat
     return float(closes.iloc[pos]), float(closes.iloc[pos + sessions]), closes.index[pos + sessions].date()
 
 
+def occ(symbol: str, expiry: date, kind: str, strike: float) -> str:
+    """Option contract code used by Alpaca, e.g. AAPL261218C00230000."""
+    return f"{symbol}{expiry:%y%m%d}{'C' if kind == 'call' else 'P'}{round(strike * 1000):08d}"
+
+
+def option_move(opt: pd.Series, stock: pd.Series, day: date, sessions: int, expiry: date,
+                strike: float, kind: str) -> float | None:
+    """How much the option itself gained or lost from the alert day's close to the same later
+    session the stock is judged on. After expiry the option is worth what it pays at expiry
+    (stock above the strike for a call, below for a put; otherwise zero)."""
+    m = move(stock, day, sessions)
+    if m is None or opt is None or opt.empty:
+        return None
+    later_day = pd.Timestamp(m[2])
+    before = opt[opt.index <= pd.Timestamp(day)]
+    if before.empty or not before.iloc[-1]:
+        return None
+    base = float(before.iloc[-1])
+    if later_day.date() > expiry:
+        s = stock[stock.index <= pd.Timestamp(expiry)]
+        if s.empty:
+            return None
+        px = float(s.iloc[-1])
+        value = max(0.0, px - strike) if kind == "call" else max(0.0, strike - px)
+    else:
+        upto = opt[opt.index <= later_day]
+        value = float(upto.iloc[-1])
+    return value / base - 1
+
+
 def pct(base: float, later: float) -> float:
     return later / base - 1 if base else 0.0
 
@@ -54,6 +84,14 @@ def _avg_edge(rows: list, h: str) -> str:
     return f"{sum(vals) / len(vals):+.1%}" if vals else "-"
 
 
+def _opt(rows: list, h: str) -> str:
+    vals = [r[f"o_{h}"] for r in rows if r.get(f"o_{h}") is not None]
+    if not vals:
+        return "-"
+    up = sum(v > 0 for v in vals)
+    return f"avg {sum(vals) / len(vals):+.0%}, made money {up}/{len(vals)}"
+
+
 def bucket(premium: float) -> str:
     if premium >= 1_000_000:
         return "$1M+"
@@ -71,7 +109,8 @@ def scorecard(rows: list) -> str:
         return "No alerts logged yet."
     out = [f"{len(rows)} alerts logged. Right = stock moved the way the flow pointed.",
            f"All:  1 day {_rate(rows, 'v_1d')}, 1 week {_rate(rows, 'v_1w')}, "
-           f"edge vs SPY 1 week {_avg_edge(rows, '1w')}"]
+           f"edge vs SPY 1 week {_avg_edge(rows, '1w')}",
+           f"The option itself (bought at the alert-day close): 1 day {_opt(rows, '1d')}; 1 week {_opt(rows, '1w')}"]
     groups: dict[str, list] = {}
     for r in rows:
         groups.setdefault(f"size {bucket(r.get('premium') or 0)}", []).append(r)
@@ -81,7 +120,8 @@ def scorecard(rows: list) -> str:
     for name in sorted(groups):
         g = groups[name]
         if any(x.get("v_1w") in ("right", "wrong") or x.get("v_1d") in ("right", "wrong") for x in g):
-            out.append(f"{name}: 1d {_rate(g, 'v_1d')}, 1w {_rate(g, 'v_1w')}, edge 1w {_avg_edge(g, '1w')}")
+            out.append(f"{name}: 1d {_rate(g, 'v_1d')}, 1w {_rate(g, 'v_1w')}, edge 1w {_avg_edge(g, '1w')}, "
+                       f"option 1w {_opt(g, '1w')}")
     guessed = [r for r in rows if r.get("guess")]
     if guessed:
         agree = sum((r["guess"] == "bull") == (r["direction"] == "bullish") for r in guessed

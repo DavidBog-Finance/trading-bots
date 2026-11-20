@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import broker as B  # noqa: E402
-from portfolio1k import rules as R, runner, store  # noqa: E402
+from portfolio1k import rules as R, runner, settings as S, store  # noqa: E402
 
 
 def main():
@@ -16,7 +16,7 @@ def main():
                     help="exit after this many minutes or at 16:20 New York (GitHub Actions); omit to run forever")
     a = ap.parse_args()
     if a.cmd == "scorecard":
-        card = R.scorecard(store.closed_trades())
+        card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
         print(runner.scorecard_line(card))
         todo = R.go_live_ready(card, 0)
         print("Go-live bars still open:", ", ".join(todo) if todo else "none, all met")

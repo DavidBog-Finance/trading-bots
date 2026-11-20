@@ -13,6 +13,7 @@ TODAY = date(2026, 11, 20)
 def tmp_db(tmp_path, monkeypatch):
     monkeypatch.setattr(S, "DB_PATH", str(tmp_path / "flow.db"))
     monkeypatch.setattr(app, "FLOW_TOPIC", "")
+    monkeypatch.setattr(app, "_option_closes", lambda *a: None)    # no network in tests
 
 
 def test_parse_basic_call_on_ask():
@@ -162,3 +163,24 @@ def test_week_results_wait_for_friday(monkeypatch):
     app.run_once(datetime(2026, 11, 27, 17, 30, tzinfo=ET))          # Friday evening
     assert sent[-1][0] == "Flow weekly results" and "1 week: +5.0%" in sent[-1][1] and "Right =" in sent[-1][1]
     assert S.get("week_queue") == []
+
+
+def test_option_price_is_graded_too():
+    assert O.occ("AAPL", date(2026, 12, 18), "call", 230) == "AAPL261218C00230000"
+    assert O.occ("SPY", date(2026, 11, 27), "put", 592.5) == "SPY261127P00592500"
+    stock = _closes([100, 101, 99, 98, 97, 105])                      # Mon 11/16 .. Mon 11/23
+    opt = _closes([2.0, 2.4, 1.5, 1.2, 0.8, 4.0])
+    assert O.option_move(opt, stock, date(2026, 11, 16), 1, date(2026, 12, 18), 100, "call") == pytest.approx(0.2)
+    assert O.option_move(opt, stock, date(2026, 11, 16), 5, date(2026, 12, 18), 100, "call") == pytest.approx(1.0)
+    # expired before the 1-week date: worth 0 if the stock closed below a call's strike on expiry day
+    assert O.option_move(opt, stock, date(2026, 11, 16), 5, date(2026, 11, 19), 100, "call") == pytest.approx(-1.0)
+    # a put that expired in the money is worth strike - stock
+    assert O.option_move(opt, stock, date(2026, 11, 16), 5, date(2026, 11, 19), 100, "put") == pytest.approx(-0.0)
+
+    app.add_text("AAPL 12/18 100C ask $600K sweep", datetime(2026, 11, 16, 11, 0, tzinfo=ET))
+    data = {"AAPL": stock, "SPY": _closes([600, 601, 602, 603, 604, 606])}
+    done = app.fill_outcomes(datetime(2026, 11, 23, 17, 0, tzinfo=ET), lambda sym, o, n: data[sym],
+                             lambda code, o, n: opt if code == "AAPL261218C00100000" else None)
+    assert any("1 week: +5.0%, SPY +1.0% = right; the option +100%" in d for d in done)
+    card = O.scorecard(S.rows())
+    assert "The option itself" in card and "1 week avg +100%, made money 1/1" in card

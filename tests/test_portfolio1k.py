@@ -350,3 +350,13 @@ def test_stop_replaced_each_morning(world):
     clock["now"] = at("09:35", date(2026, 11, 19))
     r.tick()
     assert len(log["stops"]) == 2 and store.get("position")["stop_id"] == "stop2"
+
+
+def test_scorecard_subtracts_real_costs():
+    trades = [{"pnl": 100, "qty": 2, "equity_before": 1000, "slip": None},
+              {"pnl": -50, "qty": 1, "equity_before": 1100, "slip": None},
+              {"pnl": 4, "qty": 1, "equity_before": 1050, "slip": None}]       # a tiny win becomes a loss
+    card = R.scorecard(trades, 6.0)
+    assert card["paper_net"] == 54 and card["net"] == 30
+    assert card["win_rate"] == pytest.approx(1 / 3) and card["profit_factor"] == pytest.approx(88 / 58)
+    assert "net $30.00 after est. real costs (paper $54.00)" in runner.scorecard_line(card)

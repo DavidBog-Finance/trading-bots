@@ -30,6 +30,9 @@ From a terminal: `python -m flowlog add "AAPL 12/20 230C ask $250K sweep"`, `pyt
 
 ## How it is judged
 
+- The option too: its price at the alert-day close vs the same later day (after expiry: what it paid out).
+  Short-dated options can lose money even when the stock moves the right way.
+
 - Read: call on the ask or put on the bid = bullish; put on the ask or call on the bid = bearish.
 - Base price: the stock's close on the alert day. 1 day = next close, 1 week = 5 closes later.
 - Right = the stock moved the way the read pointed. Edge vs SPY = that move minus SPY's move.

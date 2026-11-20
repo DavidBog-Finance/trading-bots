@@ -348,21 +348,24 @@ def exit_decision(p: dict, mark: float, now: datetime, last_close: float | None,
 
 # ---------- scorecard ----------
 
-def scorecard(trades: list) -> dict:
-    """trades: closed trades with pnl, cost, kind, slip (stop slippage in % points, or None)."""
-    wins = [t["pnl"] for t in trades if t["pnl"] > 0]
-    losses = [-t["pnl"] for t in trades if t["pnl"] < 0]
+def scorecard(trades: list, cost_per_contract: float = 0.0) -> dict:
+    """trades: closed trades with pnl, qty, cost, kind, slip (stop slippage in % points, or None).
+    cost_per_contract: dollars subtracted per contract per round trip, because paper fills are better
+    than real ones. Every number in the card is AFTER that cost; paper_net is the raw paper result."""
+    adj = [t["pnl"] - cost_per_contract * (t.get("qty") or 0) for t in trades]
+    wins = [p for p in adj if p > 0]
+    losses = [-p for p in adj if p < 0]
     eq, peak, dd = 0.0, 0.0, 0.0
     base = trades[0]["equity_before"] if trades else 0
-    for t in trades:
-        eq += t["pnl"]
+    for p in adj:
+        eq += p
         peak = max(peak, eq)
         if base:
             dd = max(dd, (peak - eq) / (base + peak))
     slips = [t["slip"] for t in trades if t.get("slip") is not None]
     return {"trades": len(trades), "win_rate": len(wins) / len(trades) if trades else 0.0,
             "profit_factor": (sum(wins) / sum(losses)) if losses else (math.inf if wins else 0.0),
-            "net": sum(t["pnl"] for t in trades), "max_drawdown": dd,
+            "net": sum(adj), "paper_net": sum(t["pnl"] for t in trades), "max_drawdown": dd,
             "avg_stop_slip": sum(slips) / len(slips) if slips else None}
 
 

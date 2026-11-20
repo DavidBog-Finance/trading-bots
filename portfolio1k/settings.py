@@ -37,6 +37,9 @@ FULL_PER_WEEK = int(_f("FULL_PER_WEEK", 1))
 
 # Exits
 TP1, TP2, TRAIL = _f("TP1", 0.40), _f("TP2", 0.80), _f("TRAIL", 0.20)
+# Paper fills are kinder than real ones. The scorecard and go-live check subtract this many dollars per
+# contract per round trip (about 3 cents worse on each fill, x100 shares, plus small exchange fees).
+REAL_COST_PER_CONTRACT = _f("REAL_COST_PER_CONTRACT", 6.0)
 HOLD_OVERNIGHT_GAIN, HOLD_OVERNIGHT_DTE = _f("HOLD_GAIN", 0.20), int(_f("HOLD_DTE", 3))
 
 # Risk limits

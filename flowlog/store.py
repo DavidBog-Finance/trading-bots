@@ -21,6 +21,11 @@ def db() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
+    for col in ("o_1d real", "o_1w real"):      # option results, added after the first version
+        try:
+            con.execute(f"alter table alerts add column {col}")
+        except sqlite3.OperationalError:
+            pass
     return con
 
 

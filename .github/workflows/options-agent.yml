@@ -8,6 +8,7 @@
 #   ALPACA_API_KEY, ALPACA_SECRET_KEY   Alpaca PAPER keys
 #   CLAUDE_CODE_OAUTH_TOKEN             from `claude setup-token` on your Mac (your Claude plan, no API key)
 #   NTFY_TOPIC, CONTROL_TOPIC           phone alerts and phone commands
+#   HEALTHCHECK_URL (optional)          healthchecks.io ping URL: warns you if a weekday session never starts
 # Variables: NET_DEPOSITS_OVERRIDE (your paper balance, e.g. 1000). Optional P1K_* overrides (portfolio1k/settings.py).
 #
 # PUBLIC REPO NOTE: run logs are public. Keys never appear in them (GitHub masks secrets), but trades,
@@ -45,6 +46,9 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       CONTROL_TOPIC: ${{ secrets.CONTROL_TOPIC }}
+      # Optional: a healthchecks.io ping URL. Each scheduled run pings it when it starts, so healthchecks.io
+      # can text/email you if a weekday morning passes with no run (GitHub delayed or skipped it).
+      HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
       ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
       I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
       NET_DEPOSITS_OVERRIDE: ${{ vars.NET_DEPOSITS_OVERRIDE }}
@@ -83,6 +87,9 @@ jobs:
           key: p1k-state-${{ github.run_id }}
           restore-keys: p1k-state-
 
+      - name: Check in with healthchecks.io
+        if: github.event_name == 'schedule' && env.HEALTHCHECK_URL != ''
+        run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL" || true
       - name: Trade the session
         if: github.event_name == 'schedule' || inputs.action == 'run-now'
         run: python -m portfolio1k run --max-minutes 340
@@ -122,3 +129,6 @@ jobs:
         if: failure() && env.NTFY_TOPIC != ''
         run: |
           curl -s -H "Title: Options agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > options-agent to see the log. The stop at Alpaca still protects any open trade." "https://ntfy.sh/$NTFY_TOPIC"
+      - name: Tell healthchecks.io the run failed
+        if: failure() && env.HEALTHCHECK_URL != ''
+        run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL/fail" || true

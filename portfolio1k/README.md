@@ -35,3 +35,14 @@ A+/A/B before it is placed. If Claude is unavailable, setups 1 and 2 still trade
 Option quotes are Alpaca's indicative feed (not the official OPRA feed), so spreads and fills on paper are
 estimates and live fills will be somewhat worse. Stock bars come from IEX. In GitHub, stop checks pause for
 1-3 minutes between runs; the stop order at Alpaca covers that gap.
+
+## Honest paper results
+
+Paper fills are kinder than real ones. The scorecard and the go-live check subtract
+`P1K_REAL_COST_PER_CONTRACT` (default $6 per contract per round trip) from every trade before computing
+win rate, profit factor, net and drawdown. The raw paper number is still shown as "paper".
+
+## Missed-session warning (optional)
+
+Add a GitHub secret `HEALTHCHECK_URL` (a healthchecks.io ping URL). Each scheduled run pings it when it
+starts and pings `/fail` if the run fails, so healthchecks.io can warn you when a weekday passes with no run.

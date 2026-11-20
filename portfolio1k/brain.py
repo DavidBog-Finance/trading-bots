@@ -78,3 +78,17 @@ def review(payload: dict) -> dict | None:
     except (CC.BudgetExceeded, RuntimeError) as e:
         B.log.warning("[1k] trade review unavailable: %s", e)
         return None
+
+
+def check() -> str:
+    """One tiny Claude call, for the status button: 'OK' or why Claude can't be reached."""
+    why = available()
+    if why:
+        return why
+    try:
+        CC.cli_json("p1k-check", "Reply with ok=true.", "ping", {"type": "object", "additionalProperties": False,
+                                                                 "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
+                    timeout=120)
+        return "OK"
+    except Exception as e:
+        return str(e)[:300]

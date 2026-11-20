@@ -33,6 +33,9 @@ def main():
         r.tick_safely()
     elif a.cmd == "status":
         txt = r.status_text()
+        if S.USE_CLAUDE:
+            from portfolio1k import brain
+            txt += "\nClaude: " + brain.check()
         print(txt)
         B.notify(txt, "1k Status", "low")
     elif a.cmd == "kill":

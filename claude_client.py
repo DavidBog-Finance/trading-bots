@@ -91,7 +91,8 @@ def cli_json(purpose: str, system: str, prompt: str, schema: dict, timeout: int 
             raise BudgetExceeded(f"Claude plan usage limit reached ({text[:120]})")
         if "log in" in text.lower() or "login" in text.lower() or "auth" in text.lower():
             raise RuntimeError("Claude Code is not signed in: run `claude` once and log in "
-                               "(cloud: refresh the CLAUDE_CODE_OAUTH_TOKEN secret with `claude setup-token`)")
+                               "(cloud: refresh the CLAUDE_CODE_OAUTH_TOKEN secret with `claude setup-token`). "
+                               f"Claude Code said: {text[:200]}")
         raise RuntimeError(f"Claude Code error: {text[:300]}")
     # Not billed on a subscription; logged so you can see how much the bots use.
     state.add_spend(purpose, "pro-plan", 0.0)

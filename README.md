@@ -3,6 +3,7 @@
 > **Current focus (Nov 2026): options only.** The Portfolio 1k options agent (`portfolio1k/`, see its README)
 > runs on GitHub Actions (`options-agent.yml`). The stock and crypto bots and agents below are switched off;
 > turn them back on with the GitHub variable `STOCKS_CRYPTO=on`.
+> Learning: `flowlog/` logs options-flow alerts you send from your phone and checks the stock 1 day and 1 week later (`flowlog.yml`).
 
 Tested daily rules bots plus two Claude agents (stock and crypto) that watch the whole market and the news
 all day from your Mac and decide trades within hard limits. Built for Alpaca, run and modified with Claude Code.

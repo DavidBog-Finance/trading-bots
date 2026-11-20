@@ -538,3 +538,29 @@ def bot_buys_since(orders: list, since_iso: str) -> int:
                 and o.get("status") == "filled" and (o.get("filled_at") or "") >= since_iso:
             n += 1
     return n
+
+
+# ---------- near-miss report ----------
+
+SKIP_LABELS = {"skip:spy": "SPY was moving the other way", "skip:contract": "no option passed the spread/OI/expiry filters",
+               "skip:claude": "Claude said no", "skip:size": "one contract cost more than the budget",
+               "skip:fill": "order didn't fill in 60 s"}
+
+
+def near_miss(events: list, examples: int = 3) -> str:
+    """The day's setups in plain words: how many fired, how many became trades, why the rest were skipped,
+    and a few examples. events: dicts with kind and text (oldest first). '' when no setup fired."""
+    seen = [e for e in events if e["kind"] == "setup"]
+    if not seen:
+        return ""
+    bought = sum(e["kind"] == "BUY" for e in events)
+    skips = [e for e in events if e["kind"].startswith("skip:")]
+    lines = [f"{len(seen)} setup{'s' if len(seen) != 1 else ''} fired today, {bought} became a trade."]
+    counts: dict = {}
+    for e in skips:
+        counts[e["kind"]] = counts.get(e["kind"], 0) + 1
+    for k, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        lines.append(f"- {n} skipped: {SKIP_LABELS.get(k, k)}")
+    if skips:
+        lines.append("Examples: " + " | ".join(e["text"][:120] for e in skips[-examples:]))
+    return "\n".join(lines)

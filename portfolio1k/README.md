@@ -65,6 +65,12 @@ fees (`P1K_FEE_PER_CONTRACT_SIDE`, default $0.05). The status, daily summary and
 "paid X% vs mid in, Y% out, spread Z%, about $N per round trip x trades/yr = $M/yr", plus win rate and
 average result for each Claude grade (A+, A, B, rules only), so you can see whether the grades predict anything.
 
+## Near-miss report
+
+After the close (4:15 pm New York), on any day a setup fired, your phone gets "1k Near misses today":
+how many setups fired, how many became trades, why the others were skipped (SPY against it, no good
+contract, Claude said no, too expensive, not filled) and a few examples. It shows whether the bot is too picky.
+
 ## Honest paper results
 
 Paper fills are kinder than real ones. The scorecard and the go-live check subtract

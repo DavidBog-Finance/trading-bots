@@ -543,3 +543,23 @@ def test_trader_sell_ladder_then_market(monkeypatch):
     assert [c[1] for c in calls if c[0] == "replace"] == [2.03, 2.01, 2.0]
     assert calls[-1] == ("MarketOrderRequest", None, 1)
     assert px == pytest.approx((2.03 + 1.95) / 2)
+
+
+def test_near_miss_report():
+    ev = [{"kind": "setup", "text": "NVDA orb call"}, {"kind": "skip:spy", "text": "NVDA orb call: SPY disagrees"},
+          {"kind": "setup", "text": "QQQ pullback put"}, {"kind": "skip:claude", "text": "QQQ pullback put: Claude B: choppy"},
+          {"kind": "setup", "text": "SPY orb call"}, {"kind": "BUY", "text": "Bought 2 SPY..."}]
+    txt = R.near_miss(ev)
+    assert txt.startswith("3 setups fired today, 1 became a trade.")
+    assert "1 skipped: SPY was moving the other way" in txt and "Claude B: choppy" in txt
+    assert R.near_miss([{"kind": "skip:spy", "text": "x"}]) == ""
+
+
+def test_near_miss_logged_in_the_loop(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    monkeypatch.setattr(brain, "review", lambda payload: {"take": False, "grade": "B", "reason": "choppy"})
+    runner.Runner(fc).tick()
+    kinds = [e["kind"] for e in store.events(50)]
+    assert "setup" in kinds and "skip:claude" in kinds
+    txt = R.near_miss(store.events_since("2000-01-01"))
+    assert "Claude said no" in txt

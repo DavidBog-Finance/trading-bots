@@ -57,6 +57,12 @@ def event(kind: str, text: str):
         con.execute("insert into events values(?,?,?)", (datetime.now(timezone.utc).isoformat(timespec="seconds"), kind, text[:2000]))
 
 
+def events_since(ts: str) -> list:
+    """Events at or after a UTC ISO time, oldest first."""
+    with db() as con:
+        return [dict(r) for r in con.execute("select * from events where ts >= ? order by ts", (ts,))]
+
+
 def events(limit: int = 20) -> list:
     with db() as con:
         return [dict(r) for r in con.execute("select * from events order by ts desc limit ?", (limit,))]

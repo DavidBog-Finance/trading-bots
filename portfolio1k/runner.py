@@ -382,9 +382,10 @@ class Runner:
                         sigs.append(sig)
         self.save()
         for sig in R.merge_signals(sigs):
+            store.event("setup", f"{sig.symbol} {'+'.join([sig.setup, *sig.extra.get('also', [])])} {sig.direction}")
             spy_ok = R.spy_agrees(spy, sig.direction)
             if not spy_ok:
-                store.event("skip", f"{sig.symbol} {sig.setup} {sig.direction}: SPY disagrees")
+                store.event("skip:spy", f"{sig.symbol} {sig.setup} {sig.direction}: SPY disagrees")
                 continue
             if self.try_trade(sig, now, acct, equity, earn):
                 return None
@@ -401,7 +402,7 @@ class Runner:
         pick, reasons = R.pick_contract(cands, sig.symbol, today, date.fromisoformat(e) if e else None,
                                         R.budget_for("standard", equity, cash))
         if not pick:
-            store.event("skip", f"{sig.symbol} {sig.setup} {sig.direction}: no contract passed ({reasons})")
+            store.event("skip:contract", f"{sig.symbol} {sig.setup} {sig.direction}: no contract passed ({reasons})")
             return False
         review = None
         if S.USE_CLAUDE:
@@ -417,20 +418,21 @@ class Runner:
                 "recent_trades": store.closed_trades()[-5:]})
         if review is None:
             if sig.setup == "news" and not sig.extra.get("also"):
-                store.event("skip", f"{sig.symbol} news setup: Claude unavailable")
+                store.event("skip:claude", f"{sig.symbol} news setup: Claude unavailable")
                 return False
             review = {"take": True, "grade": "A", "reason": "rules only (Claude unavailable)"}
         if not review["take"]:
-            store.event("skip", f"{sig.symbol} {sig.setup} {sig.direction}: Claude {review['grade']}: {review['reason']}")
+            store.event("skip:claude", f"{sig.symbol} {sig.setup} {sig.direction}: Claude {review['grade']}: {review['reason']}")
             return False
         tier, tier_why = R.choose_tier(sig, review["grade"], True, self.st, R.iso_week(today))
         budget = full_budget if tier == "full" else R.budget_for("standard", equity, cash)
         qty = R.contracts_for(budget, pick["ask"])
         if qty < 1:
+            store.event("skip:size", f"{pick['symbol']}: one contract costs more than the {tier} budget")
             return False
         filled, px = trader.buy(self.client, pick["symbol"], sig.symbol, qty, pick["bid"], pick["ask"])
         if not filled:
-            store.event("skip", f"{pick['symbol']} not filled within 60 s")
+            store.event("skip:fill", f"{pick['symbol']} not filled within 60 s")
             return False
         stop = round(px * (1 - R.stop_pct(tier)), 2)
         stop_id = trader.place_stop(self.client, pick["symbol"], sig.symbol, filled, stop)
@@ -509,6 +511,10 @@ class Runner:
         self.st["summary_day"] = today
         self.save()
         traded = any(t["closed"] and t["closed"][:10] >= (now - timedelta(days=1)).date().isoformat() for t in store.closed_trades())
+        day0 = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat(timespec="seconds")
+        near = R.near_miss(store.events_since(day0))
+        if near:
+            B.notify(near, "1k Near misses today", "low")
         if traded or self.st.get("trades_day") or self.st.get("problem_day") == today or now.weekday() == 4:
             title = "Weekly scorecard" if now.weekday() == 4 else "Daily summary"
             card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)

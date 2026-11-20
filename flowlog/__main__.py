@@ -1,5 +1,6 @@
 """python -m flowlog add "AAPL 12/20 230C ask $250K sweep"   log one alert (several lines OK)
-python -m flowlog run          one pass: read the phone topic, fill results (GitHub uses this)
+python -m flowlog run [--scan] one pass: read the phone topic, fill results; --scan adds the after-close scan
+python -m flowlog scan         scan the last closed session now (once per session)
 python -m flowlog watch        keep running (always-on computer)
 python -m flowlog report       print the scorecard (also pushes it to your phone)
 python -m flowlog list | delete N | export [file.csv]"""
@@ -18,7 +19,10 @@ def main(argv: list[str]) -> int:
         print("\n".join(replies))
         app.say("\n".join(replies))
     elif cmd == "run":
-        app.run_once()
+        app.run_once(scan_too="--scan" in argv)
+    elif cmd == "scan":
+        lines = app.scan(catch_up=True)
+        print(f"logged {len(lines)} scan alerts")
     elif cmd == "watch":
         app.watch()
     elif cmd in ("report", "list", "help") or (cmd == "delete" and rest):

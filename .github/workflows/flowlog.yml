@@ -2,6 +2,8 @@
 # You send alerts from your phone (Safari: ntfy.sh/<FLOW_TOPIC name>) (one per line, e.g. "AAPL 12/20 230C ask $250K sweep").
 # Every 2 hours this job reads them, and after each close it fills in what the stock did 1 trading day and
 # 1 trading week later, next to SPY. Results and a Friday scorecard arrive in your normal ntfy alerts.
+# After each close it also scans your watchlist's options for unusually big new volume (free Alpaca data)
+# and logs the top few automatically, tagged "scan" (see flowlog/scan.py).
 #
 # Secrets: ALPACA_API_KEY, ALPACA_SECRET_KEY (already set; only used for daily prices), NTFY_TOPIC,
 #          FLOW_TOPIC (new: another long random name, e.g. flow-7f3k9q2m8x)
@@ -21,7 +23,7 @@ on:
         required: true
         default: add
         type: choice
-        options: [add, report, list, export]
+        options: [add, report, list, export, scan]
       alert:
         description: "For add: alert text, e.g. AAPL 12/20 230C ask $250K sweep"
         required: false
@@ -63,8 +65,11 @@ jobs:
         env:
           ALERT_TEXT: ${{ inputs.alert }}
         run: python -m flowlog add "$ALERT_TEXT" > /dev/null
-      - name: Read phone alerts and fill results
-        run: python -m flowlog run
+      - name: Read phone alerts, fill results, after-close scan
+        run: python -m flowlog run --scan
+      - name: Scan the last closed session now
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'scan'
+        run: python -m flowlog scan
       - name: Scorecard to phone
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'report'
         run: python -m flowlog report > /dev/null

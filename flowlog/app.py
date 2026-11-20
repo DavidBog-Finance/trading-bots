@@ -13,7 +13,7 @@ import json
 import os
 import time
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -174,6 +174,43 @@ def fill_outcomes(now: datetime | None = None, closes_fn=None) -> list[str]:
     return done
 
 
+def last_session(now: datetime) -> date:
+    """The most recent weekday whose session has closed (holidays simply find no volume)."""
+    d = now.date()
+    if now.weekday() >= 5 or now.hour * 60 + now.minute < 16 * 60 + 20:
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def scan(now: datetime | None = None, scan_fn=None, catch_up: bool = False) -> list[str]:
+    """Daily free scan (after the close): log the watchlist's most unusual option volume, tagged "scan".
+    catch_up=True scans the last closed session even if it is not today (the GitHub button)."""
+    from flowlog import scan as SC
+    now = now or now_et()
+    day = last_session(now)
+    if not catch_up and day != now.date():
+        return []
+    if S.get("scan_day") == day.isoformat():
+        return []
+    if scan_fn is None:
+        from portfolio1k import settings as PS
+        alerts = SC.run(day, PS.WATCHLIST, log=B.log.warning)
+    else:
+        alerts = scan_fn(day)
+    lines = []
+    for a in alerts:
+        n = S.add(a, now.isoformat(timespec="minutes"), day.isoformat())
+        read = a.direction if a.direction != "unclear" else "unclear (mixed buying and selling)"
+        lines.append(f"#{n} {a.text}: {read}")
+    S.put("scan_day", day.isoformat())
+    if lines:
+        say("Today's biggest unusual option volume on your watchlist (estimated side):\n" + "\n".join(lines),
+            "Flow scan")
+    return lines
+
+
 def export(path: str) -> int:
     rs = S.rows()
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -187,8 +224,13 @@ def export(path: str) -> int:
     return len(rs)
 
 
-def run_once(now: datetime | None = None):
+def run_once(now: datetime | None = None, scan_too: bool = False):
     ingest_phone()
+    if scan_too:
+        try:
+            scan(now)
+        except Exception as e:
+            B.log.warning("flow scan failed: %s", e)
     done = fill_outcomes(now)
     if done:
         say("\n".join(done[:20]) + (f"\n...and {len(done) - 20} more" if len(done) > 20 else ""), "Flow results")
@@ -204,7 +246,7 @@ def watch(every_sec: int = 300):
     """Always-on computer: check the phone topic every few minutes, results after the close."""
     while True:
         try:
-            run_once()
+            run_once(scan_too=True)
         except Exception as e:
             B.log.warning("flow log pass failed: %s", e)
         time.sleep(every_sec)

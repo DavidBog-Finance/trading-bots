@@ -36,3 +36,12 @@ From a terminal: `python -m flowlog add "AAPL 12/20 230C ask $250K sweep"`, `pyt
 
 GitHub: `.github/workflows/flowlog.yml`, every 2 hours (ntfy keeps phone messages about 12 hours).
 Own computer: `python -m flowlog watch` (checks every 5 minutes). Data: `logs/flowlog.db`.
+
+## Automatic scan (free)
+
+After each close, `python -m flowlog run --scan` looks at your watchlist's options in your free Alpaca
+data and logs up to 8 contracts with unusually big new volume (volume above open interest, $100K+
+traded, 1-45 days to expiry, at most 2 per stock), tagged `scan`. Alpaca's free data has no buy/sell
+flag, so the side is estimated from price ticks (tag `est-side`) and left blank when mixed.
+The scorecard shows `tag scan` separately, so you can compare it with the alerts you log yourself.
+Run it now for the last closed session: `python -m flowlog scan`, or the `scan` button on GitHub.

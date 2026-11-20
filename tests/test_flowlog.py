@@ -100,3 +100,51 @@ def test_export(tmp_path):
     app.add_text("META 12/18 700C ask 200K block", datetime(2026, 11, 16, 11, 0, tzinfo=ET))
     p = tmp_path / "out.csv"
     assert app.export(str(p)) == 1 and "META" in p.read_text()
+
+
+def test_scan_picks_unusual_contracts():
+    from flowlog import scan as SC
+    d = date(2026, 11, 20)
+    C = SC.Contract
+    pool = [C("A1", "AAPL", date(2026, 12, 18), 230, "call", 400, 3000, 2.0),   # $600K, vol 7.5x OI
+            C("A2", "AAPL", date(2026, 12, 18), 240, "call", 400, 2000, 1.0),   # $200K, 5x OI: ranks below A3, capped at 2 per stock
+            C("A3", "AAPL", date(2026, 12, 18), 250, "call", 100, 1000, 1.5),   # $150K, 10x OI
+            C("N1", "NVDA", date(2026, 12, 18), 150, "put", 9000, 3000, 3.0),   # volume below OI
+            C("N2", "NVDA", date(2026, 11, 20), 150, "put", 10, 5000, 1.0),     # expires today
+            C("S1", "SPY", date(2026, 11, 27), 600, "put", 100, 400, 9.0)]      # too few contracts
+    picked = SC.unusual(pool, d)
+    assert [c.symbol for c in picked] == ["A1", "A3"]
+    a = SC.to_alert(picked[0], "ask", d)
+    assert a.direction == "bullish" and a.tags == ["scan", "vol>oi", "est-side"] and a.premium == 600_000
+    assert a.text.startswith("[scan] AAPL 12/18 230C ask $600K")
+
+
+def test_tick_rule_side():
+    from flowlog import scan as SC
+    assert SC.side_from_ticks([(1.00, 10), (1.05, 50), (1.10, 40), (1.08, 5)]) == "ask"
+    assert SC.side_from_ticks([(2.00, 10), (1.90, 60), (1.80, 30), (1.85, 10)]) == "bid"
+    assert SC.side_from_ticks([(1.00, 10), (1.10, 50), (1.00, 50)]) == ""
+    assert SC.side_from_ticks([]) == ""
+
+
+def test_app_scan_runs_once_after_close():
+    from flowlog import scan as SC
+    c = SC.Contract("A1", "AAPL", date(2026, 12, 18), 230, "call", 400, 3000, 2.0)
+    fn = lambda day: [SC.to_alert(c, "bid", day)]
+    assert app.scan(datetime(2026, 11, 20, 15, 0, tzinfo=ET), fn) == []          # market still open
+    lines = app.scan(datetime(2026, 11, 20, 16, 30, tzinfo=ET), fn)
+    assert len(lines) == 1 and "bearish" in lines[0]
+    assert app.scan(datetime(2026, 11, 20, 18, 30, tzinfo=ET), fn) == []         # once a day
+    assert S.rows()[0]["tags"] == ["scan", "vol>oi", "est-side"]
+    assert app.scan(datetime(2026, 11, 21, 17, 0, tzinfo=ET), fn) == []          # Saturday
+
+
+def test_catch_up_scan_uses_last_closed_session():
+    from flowlog import scan as SC
+    c = SC.Contract("A1", "AAPL", date(2026, 12, 18), 230, "call", 400, 3000, 2.0)
+    seen = []
+    fn = lambda day: seen.append(day) or [SC.to_alert(c, "", day)]
+    assert app.last_session(datetime(2026, 11, 23, 9, 0, tzinfo=ET)) == date(2026, 11, 20)   # Monday morning -> Friday
+    lines = app.scan(datetime(2026, 11, 20, 1, 0, tzinfo=ET), fn, catch_up=True)
+    assert seen == [date(2026, 11, 19)] and "unclear" in lines[0]
+    assert S.rows()[0]["alert_day"] == "2026-11-19"

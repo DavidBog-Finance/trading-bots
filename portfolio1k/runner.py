@@ -402,7 +402,7 @@ class Runner:
         cands = data.candidates(self.client, sig.symbol, sig.direction, spot, today)
         full_budget = R.budget_for("full", equity, cash)
         pick, reasons = R.pick_contract(cands, sig.symbol, today, date.fromisoformat(e) if e else None,
-                                        R.budget_for("standard", equity, cash))
+                                        R.budget_for("standard", equity, cash), getattr(self, "next_day", None))
         if not pick:
             store.event("skip:contract", f"{sig.symbol} {sig.setup} {sig.direction}: no contract passed ({reasons})")
             return False
@@ -552,6 +552,7 @@ class Runner:
             self.close_today = clock.next_close.astimezone(ET).time()   # 13:00 on half days
         except Exception:
             self.close_today = None
+        self.next_day = next_day
         self.manage(now, next_day)
         self.news(now)
         why = self.scan(now, acct, equity)

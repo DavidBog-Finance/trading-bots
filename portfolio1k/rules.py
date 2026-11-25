@@ -169,12 +169,17 @@ def round_tick(root: str, price: float, up: bool = False) -> float:
     return round((math.ceil(n - 1e-9) if up else math.floor(n + 1e-9)) * t, 2)
 
 
-def contract_problems(c: dict, underlying: str, today: date, earnings: date | None) -> list:
-    """Why a contract fails 'What to trade' (empty list = passes). c has: expiry, delta, bid, ask, oi, volume."""
+def contract_problems(c: dict, underlying: str, today: date, earnings: date | None,
+                      next_trading_day: date | None = None) -> list:
+    """Why a contract fails 'What to trade' (empty list = passes). c has: expiry, delta, bid, ask, oi, volume.
+    `next_trading_day`: a contract expiring by then would be force-sold at 15:30 today, so it is skipped
+    (before a holiday, 2 calendar days can be just 1 trading day)."""
     bad = []
     dte = (c["expiry"] - today).days
     if not S.MIN_DTE <= dte <= S.MAX_DTE:
         bad.append(f"{dte} days to expiry")
+    elif next_trading_day and c["expiry"] <= next_trading_day:
+        bad.append("expires next trading day")
     d = abs(c.get("delta") or 0)
     if not S.MIN_DELTA <= d <= S.MAX_DELTA:
         bad.append(f"delta {d:.2f}")
@@ -196,11 +201,12 @@ def contract_problems(c: dict, underlying: str, today: date, earnings: date | No
     return bad
 
 
-def pick_contract(cands: list, underlying: str, today: date, earnings: date | None, budget: float):
+def pick_contract(cands: list, underlying: str, today: date, earnings: date | None, budget: float,
+                  next_trading_day: date | None = None):
     """Best passing contract that fits at least 1 whole contract in `budget`, or (None, reasons)."""
     ok, reasons = [], {}
     for c in cands:
-        bad = contract_problems(c, underlying, today, earnings)
+        bad = contract_problems(c, underlying, today, earnings, next_trading_day)
         if not bad and contracts_for(budget, c["ask"]) < 1:
             bad = [f"1 contract costs ${c['ask'] * 100:.0f}, budget ${budget:.0f}"]
         if bad:

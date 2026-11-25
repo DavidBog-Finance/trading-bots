@@ -230,7 +230,7 @@ class Fake:
 
     def get_clock(self):
         now = datetime.now(timezone.utc)
-        return types.SimpleNamespace(is_open=self.is_open, next_open=now + timedelta(days=1), timestamp=now,
+        return types.SimpleNamespace(is_open=self.is_open, next_open=runner.now_et() + timedelta(days=1), timestamp=now,
                                      next_close=datetime.now(runner.ET).replace(hour=16, minute=0))  # a regular day
 
     def get_open_position(self, sym):
@@ -590,3 +590,13 @@ def test_half_day_moves_end_of_day_rules_earlier():
     assert R.entry_block(st, datetime(2026, 11, 27, 11, 40), 1000, 1000, False, set(), time(13, 0)) == "outside entry hours"
     assert R.entry_block(st, datetime(2026, 11, 27, 10, 30), 1000, 1000, False, set(), time(13, 0)) != "outside entry hours"
     assert R.close_adjusted(fri, time(16, 0)) == fri and R.close_adjusted(fri, None) == fri
+
+
+def test_no_contract_that_would_be_force_sold_today():
+    from datetime import date
+    wed, fri = date(2026, 11, 25), date(2026, 11, 27)            # Thanksgiving: Friday is the next trading day
+    c = contract(expiry=fri)
+    assert "expires next trading day" in R.contract_problems(c, "NVDA", wed, None, fri)
+    assert R.contract_problems(c, "NVDA", wed, None) == []      # unchanged when the next trading day is unknown
+    pick, why = R.pick_contract([c], "NVDA", wed, None, 500, fri)
+    assert pick is None and "expires" in why

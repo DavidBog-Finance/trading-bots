@@ -65,8 +65,10 @@ SUMMARY = "16:15"
 LOOP_SEC = _f("LOOP_SEC", 15)
 
 # Fed decision days (14:00 ET): no entries 13:30-14:30. CPI/jobs come out at 08:30, before entries start.
-# Add next year's dates with P1K_FOMC_DAYS=2027-01-27,... when the Fed publishes them.
-FOMC_DAYS = set(_l("FOMC_DAYS", "2026-12-09"))
+# Override with P1K_FOMC_DAYS=... if the Fed moves a date.
+# Decision days (2nd day of each meeting) from the Fed's calendar as of Nov 2026; tentative until confirmed.
+FOMC_DAYS = set(_l("FOMC_DAYS", "2026-12-09,2027-01-27,2027-03-17,2027-04-28,2027-06-09,2027-07-28,"
+                                "2027-09-15,2027-10-27,2027-11-17"))
 
 USE_CLAUDE = _b("USE_CLAUDE", True)
 

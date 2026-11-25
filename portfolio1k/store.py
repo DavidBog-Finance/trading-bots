@@ -18,7 +18,7 @@ create table if not exists events(ts text, kind text, text text);
 # Cost log columns, added to older databases on first open.
 _COST_COLS = {"feed": "text", "entry_bid": "real", "entry_ask": "real", "entry_slip": "real", "entry_slip_pct": "real",
               "entry_spread_pct": "real", "exit_bid": "real", "exit_ask": "real", "exit_slip": "real",
-              "exit_slip_pct": "real", "fees": "real"}
+              "exit_slip_pct": "real", "fees": "real", "shadow": "text"}
 
 
 def db() -> sqlite3.Connection:

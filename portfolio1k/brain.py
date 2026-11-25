@@ -37,12 +37,16 @@ Grade it:
   A   a good, normal setup
   B   marginal: something argues against it (choppy tape, news against it, late in the move)
 take=false for B or anything you would not put real money on. Be strict: skipping is cheap,
-bad trades are not. reason: at most 30 words, written for the account owner."""
+bad trades are not. reason: at most 30 words, written for the account owner.
+win_prob: your honest probability (0-1) that this trade ends with a profit under the code's exit rules
+(stop -30%, half off at +40%, rest at +80% or the trailing/time exits). It is scored against outcomes,
+so do not round toward 0.5 or 1 - be calibrated."""
 
-REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["take", "grade", "reason"],
+REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["take", "grade", "reason", "win_prob"],
                  "properties": {"take": {"type": "boolean"},
                                 "grade": {"type": "string", "enum": ["A+", "A", "B"]},
-                                "reason": {"type": "string"}}}
+                                "reason": {"type": "string"},
+                                "win_prob": {"type": "number", "minimum": 0, "maximum": 1}}}
 
 
 def ask(purpose: str, system: str, payload: dict, schema: dict) -> dict:

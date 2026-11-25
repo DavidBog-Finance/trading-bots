@@ -486,6 +486,7 @@ class Runner:
             review = {"take": True, "grade": "A", "reason": "rules only (Claude unavailable)"}
         if not review["take"]:
             store.event("skip:claude", f"{sig.symbol} {sig.setup} {sig.direction}: Claude {review['grade']}: {review['reason']}")
+            self.add_ghost(sig, pick, review)
             return False
         if not C.DRY_RUN:
             try:
@@ -507,6 +508,11 @@ class Runner:
         if qty < 1:
             store.event("skip:size", f"{pick['symbol']}: one contract costs more than the {tier} budget")
             return False
+        try:
+            shadow = R.shadow_filters(sig, now, df, self.daily.get(sig.symbol, []), self.bars.get("SPY"))
+        except Exception as e:
+            B.log.info("[1k] shadow filters failed: %s", e)
+            shadow = {}
         filled, px = trader.buy(self.client, pick["symbol"], sig.symbol, qty, pick["bid"], pick["ask"])
         if not filled:
             store.event("skip:fill", f"{pick['symbol']} not filled within 60 s")
@@ -521,7 +527,8 @@ class Runner:
                                direction=sig.direction, tier=tier, qty=filled, entry=px, cost=cost,
                                equity_before=equity, claude=json.dumps(review), feed=S.OPTION_FEED,
                                entry_bid=pick["bid"], entry_ask=pick["ask"], entry_slip=fc["slip"],
-                               entry_slip_pct=fc["slip_pct"], entry_spread_pct=fc["spread_pct"])
+                               entry_slip_pct=fc["slip_pct"], entry_spread_pct=fc["spread_pct"],
+                               shadow=json.dumps(shadow))
         self.set_position({"trade_id": tid, "symbol": pick["symbol"], "root": sig.symbol, "direction": sig.direction,
                            "setup": sig.setup, "tier": tier, "qty": filled, "qty_open": filled, "entry": px, "stop": stop,
                            "stop_id": stop_id, "tp1_done": False, "high": px, "level": sig.level,
@@ -541,6 +548,43 @@ class Runner:
                     + (f"\nStandard size because: {tier_why}" if tier == "standard" and review["grade"] == "A+" else ""),
                     "BUY")
         return True
+
+    # ---------- trades Claude said no to, followed on paper ----------
+    def add_ghost(self, sig, pick: dict, review: dict):
+        if not (pick.get("ask") or 0) > 0:
+            return
+        entry = float(pick["ask"])   # what buying would have cost
+        ghosts = store.get("ghosts") or []
+        ghosts.append({"symbol": pick["symbol"], "root": sig.symbol, "direction": sig.direction, "setup": sig.setup,
+                       "tier": "standard", "qty": 2, "qty0": 2, "entry": entry,
+                       "stop": round(entry * (1 - R.stop_pct("standard")), 2), "tp1_done": False, "high": entry,
+                       "level": sig.level, "expiry": pick["expiry"].isoformat(), "realized": 0.0,
+                       "opened": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                       "grade": review.get("grade"), "win_prob": review.get("win_prob")})
+        store.put("ghosts", ghosts[-10:])
+
+    def track_ghosts(self, now: datetime, next_day: date):
+        ghosts = store.get("ghosts") or []
+        if not ghosts or time.time() - getattr(self, "_ghost_t", 0) < 60:
+            return
+        self._ghost_t = time.time()
+        keep, done = [], store.get("ghost_results") or []
+        for g in ghosts:
+            bid, ask, _ = data.option_quote(g["symbol"])
+            if bid <= 0 or ask <= 0:
+                keep.append(g)
+                continue
+            under = self.bars.get(g["root"])
+            last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
+            g, result = R.ghost_step(g, (bid + ask) / 2, now, last_close, next_day, getattr(self, "close_today", None))
+            if result is None:
+                keep.append(g)
+            else:
+                done.append({"opened": g["opened"], "symbol": g["symbol"], "grade": g.get("grade"),
+                             "win_prob": g.get("win_prob"), "result": round(result, 4)})
+                store.event("ghost", f"{g['symbol']} (Claude said no): {result:+.0%} on paper")
+        store.put("ghosts", keep)
+        store.put("ghost_results", done[-500:])
 
     # ---------- news ----------
     def news(self, now: datetime):
@@ -578,7 +622,7 @@ class Runner:
         trades = store.closed_trades()
         card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
         lines.append(scorecard_line(card))
-        lines += [x for x in (cost_line(trades), grade_lines(trades)) if x]
+        lines += [x for x in (cost_line(trades), grade_lines(trades), luck_line(trades), claude_line(trades)) if x]
         return "\n".join(lines)
 
     def daily_summary(self, now: datetime):
@@ -600,8 +644,12 @@ class Runner:
             card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
             extra = ""
             if now.weekday() == 4:
-                todo = R.go_live_ready(card, 0)
+                trades = store.closed_trades()
+                todo = R.go_live_ready(card, 0, R.expectancy_ci(trades, S.REAL_COST_PER_CONTRACT))
                 extra = "\nGo-live bars still open: " + (", ".join(todo) if todo else "none, all met")
+                sh = shadow_lines(trades)
+                if sh:
+                    extra += "\n" + sh
             B.notify(self.status_text() + extra, f"1k {title}", "low")
 
     # ---------- main ----------
@@ -633,6 +681,10 @@ class Runner:
                 self.close_today = None
             self.next_day = next_day
             self.manage(now, next_day)
+            try:
+                self.track_ghosts(now, next_day)
+            except Exception as e:
+                B.log.info("[1k] paper-tracking rejected trades failed: %s", e)
         try:
             self.prep(now)
         except Exception as e:
@@ -721,6 +773,37 @@ def grade_lines(trades: list) -> str:
     rows = [f"{g}: {c['trades']} trades, win {c['win_rate']:.0%}, avg {fmt_money(c['avg'])}"
             for g, c in sorted(card.items(), key=lambda kv: order.index(kv[0]) if kv[0] in order else 9)]
     return "Grades: " + "; ".join(rows) + (" (under 20 trades each is mostly luck)" if min(c["trades"] for c in card.values()) < 20 else "")
+
+
+def luck_line(trades: list) -> str:
+    """Luck check: is the average result per trade clearly above $0, or still inside what luck explains?"""
+    ci = R.expectancy_ci(trades, S.REAL_COST_PER_CONTRACT)
+    if not ci:
+        return ""
+    return (f"Luck check ({ci['n']} trades): average {fmt_money(ci['mean'])} per trade after costs, "
+            f"95% range {fmt_money(ci['lo'])} to {fmt_money(ci['hi'])}: {ci['verdict']}")
+
+
+def claude_line(trades: list) -> str:
+    """How good are Claude's win chances, and how did the trades it rejected do on paper?"""
+    out = []
+    b = R.brier(trades)
+    if b and b["n"] >= 5:
+        better = "better than" if b["brier"] < b["base"] else "no better than"
+        out.append(f"Claude's win chances ({b['n']} trades): said {b['avg_prob']:.0%} on average, won {b['win_rate']:.0%}; "
+                   f"score {b['brier']:.3f}, {better} guessing the average ({b['base']:.3f})")
+    ghosts = store.get("ghost_results") or []
+    if ghosts:
+        avg = sum(g["result"] for g in ghosts) / len(ghosts)
+        taken = [t["pnl"] / t["cost"] for t in trades if t.get("cost")]
+        tk = f"; trades it took: {sum(taken) / len(taken):+.0%}" if taken else ""
+        out.append(f"Claude said no to {len(ghosts)} setups: on paper they averaged {avg:+.0%} per trade{tk}")
+    return "\n".join(out)
+
+
+def shadow_lines(trades: list) -> str:
+    rows = R.shadow_report(trades, S.REAL_COST_PER_CONTRACT)
+    return ("Filter tests (logged only, not used yet):\n" + "\n".join(rows)) if rows else ""
 
 
 def scorecard_line(card: dict) -> str:

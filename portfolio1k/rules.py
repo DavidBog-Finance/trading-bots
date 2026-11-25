@@ -386,8 +386,9 @@ def scorecard(trades: list, cost_per_contract: float = 0.0) -> dict:
             "avg_stop_slip": sum(slips) / len(slips) if slips else None}
 
 
-def go_live_ready(card: dict, rule_breaks: int) -> list:
-    """The plan's go-live bars that are NOT yet met (empty = ready)."""
+def go_live_ready(card: dict, rule_breaks: int, ci: dict | None = None) -> list:
+    """The plan's go-live bars that are NOT yet met (empty = ready). See portfolio1k/GO_LIVE.md.
+    ci: expectancy_ci(); its low end must be above $0 (results better than luck)."""
     out = []
     if card["trades"] < 40:
         out.append(f"{card['trades']}/40 trades")
@@ -399,6 +400,8 @@ def go_live_ready(card: dict, rule_breaks: int) -> list:
         out.append(f"stop slippage {card['avg_stop_slip']:.0f} pts")
     if rule_breaks:
         out.append(f"{rule_breaks} rule breaks")
+    if ci is not None and ci["lo"] <= 0:
+        out.append(f"luck check: average per trade ${ci['mean']:+.0f}, 95% range ${ci['lo']:+.0f} to ${ci['hi']:+.0f} includes $0")
     return out
 
 
@@ -592,3 +595,111 @@ def near_miss(events: list, examples: int = 3) -> str:
     if skips:
         lines.append("Examples: " + " | ".join(e["text"][:120] for e in skips[-examples:]))
     return "\n".join(lines)
+
+
+# ---------- shadow tests: research-backed filters, logged only (they never change a trade) ----------
+
+SHADOW_FILTERS = {
+    "lunch": "no new entries 11:30-13:30 (intraday momentum pauses at lunch)",
+    "strict_puts": "puts only when SPY is down 0.3%+ on the day and below its VWAP",
+    "vol_gate": "only when today's range is at least 3/4 of the stock's typical daily move",
+    "news_veto": "Claude's news score may only block trades, not start them",
+}
+
+
+def shadow_filters(sig, now: datetime, df: pd.DataFrame, daily_closes, spy: pd.DataFrame | None) -> dict:
+    """{filter: True if it WOULD have blocked this entry}. Pure; the result is stored with the trade."""
+    out = {"lunch": between(now, "11:30", "13:30")}
+    strict = False
+    if sig.direction == "put" and spy is not None and len(spy):
+        o, last = float(spy["open"].iloc[0]), float(spy["close"].iloc[-1])
+        strict = not (last <= o * 0.997 and last < float(vwap(spy).iloc[-1]))
+    out["strict_puts"] = strict
+    closes = [float(x) for x in list(daily_closes)[-15:]]
+    moves = [abs(b / a - 1) for a, b in zip(closes, closes[1:]) if a]
+    rng = (float(df["high"].max()) - float(df["low"].min())) / float(df["open"].iloc[0]) if len(df) else 0.0
+    out["vol_gate"] = bool(moves) and rng < 0.75 * (sum(moves) / len(moves))
+    out["news_veto"] = sig.setup == "news" and not sig.extra.get("also")
+    return out
+
+
+def shadow_report(trades: list, cost_per_contract: float = 0.0) -> list:
+    """One line per filter: how the trades it would have skipped actually did. trades: closed trades
+    with a 'shadow' JSON dict, pnl and qty. Needs about 20+ trades per side before it means much."""
+    import json as _json
+    rows = []
+    for t in trades:
+        try:
+            sh = _json.loads(t.get("shadow") or "{}")
+        except (TypeError, ValueError):
+            sh = {}
+        if sh:
+            rows.append((sh, t["pnl"] - cost_per_contract * (t.get("qty") or 0)))
+    out = []
+    for name in SHADOW_FILTERS:
+        blocked = [p for sh, p in rows if sh.get(name)]
+        kept = [p for sh, p in rows if name in sh and not sh.get(name)]
+        if not blocked and not kept:
+            continue
+        out.append(f"{name}: would have skipped {len(blocked)} of {len(blocked) + len(kept)} "
+                   f"(those made ${sum(blocked):+,.0f}; the rest ${sum(kept):+,.0f})")
+    return out
+
+
+# ---------- Claude as a forecaster, and the trades it said no to ----------
+
+def brier(trades: list) -> dict | None:
+    """Score Claude's win_prob against what happened (0 = perfect, 0.25 = coin flip). Compared with
+    always guessing the overall win rate: Claude adds value only if its score is lower."""
+    import json as _json
+    pairs = []
+    for t in trades:
+        try:
+            wp = _json.loads(t.get("claude") or "{}").get("win_prob")
+        except (TypeError, ValueError):
+            wp = None
+        if wp is not None:
+            pairs.append((float(wp), 1.0 if t["pnl"] > 0 else 0.0))
+    if not pairs:
+        return None
+    base = sum(o for _, o in pairs) / len(pairs)
+    return {"n": len(pairs), "brier": sum((p - o) ** 2 for p, o in pairs) / len(pairs),
+            "base": sum((base - o) ** 2 for _, o in pairs) / len(pairs),
+            "avg_prob": sum(p for p, _ in pairs) / len(pairs), "win_rate": base}
+
+
+def ghost_step(g: dict, mark: float, now: datetime, last_close: float | None, next_trading_day: date,
+               close: time | None = None) -> tuple:
+    """Follow a trade Claude rejected, on paper, with the same exit rules (2 contracts, filled at the mid).
+    Returns (g, None) while open, or (g, result as a fraction of the premium) once closed."""
+    g = dict(g)
+    g["high"] = max(g.get("high", g["entry"]), mark)
+    ex = exit_decision({**g, "expiry": date.fromisoformat(g["expiry"])}, mark, now, last_close,
+                       next_trading_day, close)
+    if not ex:
+        return g, None
+    px = max(mark, 0.0)
+    if ex.qty < g["qty"]:
+        g["realized"] = g.get("realized", 0.0) + (px - g["entry"]) * ex.qty
+        g["qty"] -= ex.qty
+        g["tp1_done"], g["stop"] = True, g["entry"]
+        return g, None
+    total = g.get("realized", 0.0) + (px - g["entry"]) * ex.qty
+    return g, total / (g["entry"] * g["qty0"])
+
+
+# ---------- luck check ----------
+
+def expectancy_ci(trades: list, cost_per_contract: float = 0.0, n_boot: int = 4000) -> dict | None:
+    """Average P&L per trade after costs with a 95% bootstrap range. If the range includes $0, the
+    results so far can't be told apart from luck."""
+    import random
+    pnl = [t["pnl"] - cost_per_contract * (t.get("qty") or 0) for t in trades]
+    if len(pnl) < 5:
+        return None
+    rnd = random.Random(7)
+    means = sorted(sum(rnd.choice(pnl) for _ in pnl) / len(pnl) for _ in range(n_boot))
+    lo, hi = means[int(0.025 * n_boot)], means[int(0.975 * n_boot) - 1]
+    verdict = ("probably a real edge so far" if lo > 0 else "losing, more than luck explains" if hi < 0
+               else "can't tell from luck yet")
+    return {"n": len(pnl), "mean": sum(pnl) / len(pnl), "lo": lo, "hi": hi, "verdict": verdict}

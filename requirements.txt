@@ -1,4 +1,4 @@
-alpaca-py>=0.40
+alpaca-py>=0.43.5,<0.46   # 0.44+ checks order prices before sending; tested on 0.45
 pandas>=2.0
 numpy>=1.26
 python-dotenv>=1.0

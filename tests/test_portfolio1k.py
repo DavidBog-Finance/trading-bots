@@ -767,3 +767,80 @@ def test_zero_deposits_warns_instead_of_silently_disabling_the_floor(world, monk
     r = runner.Runner(fc)
     assert r.deposits() == 0 and r.deposits() == 0
     assert len(alerts) == 1 and store.get("deposits") is None
+
+
+# ---------- shadow filters, Claude scoring, rejected trades on paper, luck check ----------
+
+def test_shadow_filters_flag_without_changing_anything():
+    flat = bars([100, 100.05, 100.0, 100.05, 100.02], spread=0.01)
+    spy_up = bars([500, 501, 502, 503, 504])
+    daily = [100 * (1.02 if i % 2 else 0.98) for i in range(20)]        # ~4% typical daily moves
+    put = R.Signal("NVDA", "orb", "put", 100.0)
+    sh = R.shadow_filters(put, at("12:00"), flat, daily, spy_up)
+    assert sh == {"lunch": True, "strict_puts": True, "vol_gate": True, "news_veto": False}
+    call = R.Signal("NVDA", "news", "call", 100.0)
+    sh = R.shadow_filters(call, at("10:15"), bars([100, 103, 105]), [100, 100.5, 101] * 6, spy_up)
+    assert sh == {"lunch": False, "strict_puts": False, "vol_gate": False, "news_veto": True}
+    assert R.shadow_filters(R.Signal("NVDA", "news", "call", 1, extra={"also": ["orb"]}), at("10:15"),
+                            bars([100, 103]), [], None)["news_veto"] is False
+
+
+def test_shadow_report_and_brier():
+    import json as _j
+    trades = [{"pnl": 100, "qty": 1, "shadow": _j.dumps({"lunch": True}), "claude": _j.dumps({"win_prob": 0.8})},
+              {"pnl": -50, "qty": 1, "shadow": _j.dumps({"lunch": False}), "claude": _j.dumps({"win_prob": 0.6})},
+              {"pnl": -40, "qty": 1, "shadow": None, "claude": "{}"}]
+    rows = R.shadow_report(trades)
+    assert rows == ["lunch: would have skipped 1 of 2 (those made $+100; the rest $-50)"]
+    b = R.brier(trades)
+    assert b["n"] == 2 and b["brier"] == pytest.approx(((0.8 - 1) ** 2 + 0.6 ** 2) / 2) and b["base"] == pytest.approx(0.25)
+
+
+def test_ghost_follows_the_same_exit_rules():
+    g = {"symbol": "X", "root": "NVDA", "direction": "call", "tier": "standard", "qty": 2, "qty0": 2, "entry": 2.0,
+         "stop": 1.4, "tp1_done": False, "high": 2.0, "level": None, "expiry": "2026-11-27", "realized": 0.0}
+    nxt = date(2026, 11, 19)
+    g1, r = R.ghost_step(g, 1.3, at("10:30"), None, nxt)
+    assert r == pytest.approx(-0.35)                                        # stopped at the -35% mark
+    g2, r = R.ghost_step(g, 2.9, at("10:30"), None, nxt)                    # +45%: half off, stop to breakeven
+    assert r is None and g2["qty"] == 1 and g2["stop"] == 2.0
+    g3, r = R.ghost_step(g2, 1.95, at("10:40"), None, nxt)
+    assert r == pytest.approx((0.9 - 0.05) / 4)
+
+
+def test_luck_check_and_go_live_bar():
+    assert R.expectancy_ci([{"pnl": 10}] * 4) is None
+    sure = R.expectancy_ci([{"pnl": 50}, {"pnl": 60}, {"pnl": 40}, {"pnl": 55}, {"pnl": 45}, {"pnl": 52}])
+    assert sure["lo"] > 0 and "real edge" in sure["verdict"]
+    coin = R.expectancy_ci([{"pnl": p} for p in (140, 205, -190, -101, 120, -110)])
+    assert coin["lo"] < 0 < coin["hi"] and "luck" in coin["verdict"]
+    card = {"trades": 50, "profit_factor": 2.0, "max_drawdown": 0.1, "avg_stop_slip": None}
+    assert any("luck check" in x for x in R.go_live_ready(card, 0, coin))
+    assert R.go_live_ready(card, 0, sure) == []
+
+
+def test_trade_stores_shadow_and_rejected_setup_is_followed_on_paper(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    monkeypatch.setattr(brain, "review", lambda payload: {"take": False, "grade": "B", "reason": "choppy", "win_prob": 0.3})
+    r = runner.Runner(fc)
+    r.tick()
+    g = store.get("ghosts")
+    assert log["buys"] == [] and len(g) == 1 and g[0]["entry"] == 2.08 and g[0]["win_prob"] == 0.3
+    feed["quote"] = (1.30, 1.34)                                            # the rejected trade would have been stopped
+    clock["now"] = at("10:05")
+    r._ghost_t = 0
+    r.tick()
+    res = store.get("ghost_results")
+    assert store.get("ghosts") == [] and res[0]["result"] < -0.3
+    assert "Claude said no to 1" in runner.claude_line([])
+
+
+def test_taken_trade_keeps_its_shadow_flags_and_win_chance(world, monkeypatch):
+    import json as _j
+    fc, clock, feed, log, sent = world
+    monkeypatch.setattr(brain, "review", lambda payload: {"take": True, "grade": "A", "reason": "ok", "win_prob": 0.6})
+    runner.Runner(fc).tick()
+    assert log["buys"]
+    with store.db() as con:
+        row = dict(con.execute("select shadow, claude from trades").fetchone())
+    assert set(_j.loads(row["shadow"])) == set(R.SHADOW_FILTERS) and _j.loads(row["claude"])["win_prob"] == 0.6

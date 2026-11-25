@@ -1,0 +1,12 @@
+# Exact versions the GitHub workflows install, so an upstream release can't break trading mid-week.
+# Versions that passed on GitHub on 2026-11-25. To update: bump here, push, and check the test step passes.
+# (requirements.txt keeps ranges for installing on your own computer.)
+alpaca-py==0.45.0
+pandas==3.1.1
+numpy==2.5.5
+python-dotenv==1.2.4
+yfinance==1.8.0
+pytest==9.2.0
+anthropic==2.14.0
+duckdb==2.0.1
+psutil==7.2.2

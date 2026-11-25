@@ -95,3 +95,19 @@ starts and pings `/fail` if the run fails, so healthchecks.io can warn you when 
 - The Claude token is cleaned of spaces and line breaks before use (`claude setup-token` wraps it over two lines).
 - `keepalive.yml` re-enables the schedules once a month (GitHub turns them off after 60 quiet days in public repos).
 - Dependabot opens a pull request once a month if a GitHub Actions step is out of date; tests run on it, you merge.
+
+## Learning what works (added 2026-11-25)
+
+- **Filter tests (logged only):** every trade stores whether four research-backed filters would have
+  blocked it (`rules.SHADOW_FILTERS`: lunch window, strict puts, volatility gate, news as a veto only).
+  The Friday scorecard shows how the trades each filter would have skipped actually did. Nothing changes
+  until a filter passes an out-of-sample backtest (repo rule).
+- **Claude as a forecaster:** each review now includes `win_prob`. The status shows its Brier score against
+  simply guessing the average win rate.
+- **Trades Claude said no to** are followed on paper with the same exit rules (filled at the mid) and
+  compared with the trades it took.
+- **Luck check:** average result per trade after costs with a 95% bootstrap range. If the range includes
+  $0, the results so far can't be told from luck. It is also a go-live bar; see `GO_LIVE.md`.
+- **Pinned versions:** GitHub installs `requirements-lock.txt` and a fixed Claude Code version, so an
+  upstream release can't break trading mid-week. `requirements.txt` keeps ranges for your own computer.
+

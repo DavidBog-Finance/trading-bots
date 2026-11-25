@@ -58,12 +58,12 @@ jobs:
       OPTIONS_RECORDER: "false"
       DAILY_SUMMARY: ${{ vars.DAILY_SUMMARY || 'false' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: pip install -r requirements.txt
@@ -72,7 +72,7 @@ jobs:
       # The agents' memory (journal, positions they own, timers, queued news) lives in logs/state.db.
       # Restore the newest copy, run, then save a new copy.
       - name: Restore agent memory
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: logs/state.db
           key: agent-state-${{ github.run_id }}
@@ -90,7 +90,7 @@ jobs:
 
       - name: Save agent memory
         if: always() && hashFiles('logs/state.db') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: logs/state.db
           key: agent-state-${{ github.run_id }}

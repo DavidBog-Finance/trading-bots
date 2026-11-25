@@ -508,7 +508,10 @@ class Runner:
 
     def daily_summary(self, now: datetime):
         today = now.date().isoformat()
-        if now.time() < R.hm(S.SUMMARY) or self.st.get("summary_day") == today:
+        # 16:15 on a normal day, 13:15 on a half day (the last run of a half day can end before 16:15)
+        close = getattr(self, "close_today", None) if getattr(self, "close_day", None) == now.date() else None
+        if R.close_adjusted(now, close).time() < R.hm(S.SUMMARY) \
+                or self.st.get("summary_day") == today:
             return
         self.st["summary_day"] = today
         self.save()
@@ -550,6 +553,7 @@ class Runner:
             else R.add_trading_days(now.date(), 1)
         try:
             self.close_today = clock.next_close.astimezone(ET).time()   # 13:00 on half days
+            self.close_day = now.date()
         except Exception:
             self.close_today = None
         self.next_day = next_day

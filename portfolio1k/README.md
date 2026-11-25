@@ -89,6 +89,9 @@ starts and pings `/fail` if the run fails, so healthchecks.io can warn you when 
   next one itself (`python -m portfolio1k more-today`, then `gh workflow run`) until about 3:55 pm.
 - Backup starter: whenever another workflow's timer lands (flow-log, agents, bots), its `kick-options` job starts
   the options agent if today's session has time left and no run is going (`.github/workflows/kick-options.yml`).
+- Mac backup starter (optional): `portfolio1k/deploy/mac-backup-starter.sh` adds a launchd job on your Mac that checks
+  every 15 min (weekdays 9:00 am-3:30 pm New York) and starts a run if none is going. It needs `gh auth login`; it never trades.
+- healthchecks.io is pinged by every trading run (timer or run-now), so hand-off days don't look like missed days.
 - The Claude token is cleaned of spaces and line breaks before use (`claude setup-token` wraps it over two lines).
 - `keepalive.yml` re-enables the schedules once a month (GitHub turns them off after 60 quiet days in public repos).
 - Dependabot opens a pull request once a month if a GitHub Actions step is out of date; tests run on it, you merge.

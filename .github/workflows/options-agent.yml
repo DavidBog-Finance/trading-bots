@@ -98,7 +98,8 @@ jobs:
           restore-keys: p1k-state-
 
       - name: Check in with healthchecks.io
-        if: github.event_name == 'schedule' && env.HEALTHCHECK_URL != ''
+        # trading runs only: most days start from a hand-off or backup starter (run-now), not GitHub's timer
+        if: (github.event_name == 'schedule' || inputs.action == 'run-now') && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL" || true
       - name: Trade the session
         if: github.event_name == 'schedule' || inputs.action == 'run-now'

@@ -600,3 +600,19 @@ def test_no_contract_that_would_be_force_sold_today():
     assert R.contract_problems(c, "NVDA", wed, None) == []      # unchanged when the next trading day is unknown
     pick, why = R.pick_contract([c], "NVDA", wed, None, 500, fri)
     assert pick is None and "expires" in why
+
+
+def test_half_day_summary_goes_out_after_the_early_close(world):
+    from datetime import time
+    fc, clock, feed, log, sent = world
+    fri = date(2026, 11, 27)
+    r = runner.Runner(fc)
+    r.close_today, r.close_day = time(13, 0), fri
+    r.daily_summary(at("13:20", fri))                       # the last run may end long before 16:15
+    assert any("Weekly scorecard" in t for t, _ in sent)
+    sent.clear()
+    r2 = runner.Runner(fc)
+    r2.st["summary_day"] = ""
+    r2.close_today, r2.close_day = time(16, 0), DAY       # a normal day: still waits for 16:15
+    r2.daily_summary(at("13:20"))
+    assert not sent

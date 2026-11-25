@@ -41,7 +41,9 @@ permissions:
   actions: write            # lets a run start the next run (hand-off); nothing else
 
 concurrency:
-  group: options-agent      # one run at a time; a queued run starts when the current one ends
+  # Trading runs queue one after another. The buttons (status, kill, ...) get their own lines, so they run
+  # at once during a session and never cancel the waiting hand-off run.
+  group: options-agent-${{ (github.event_name == 'schedule' || inputs.action == 'run-now') && 'trade' || inputs.action }}
   cancel-in-progress: false
 
 jobs:
@@ -86,6 +88,7 @@ jobs:
           node-version: "22"
       - run: pip install -r requirements.txt
       - run: npm install -g @anthropic-ai/claude-code
+        continue-on-error: true   # Claude is optional: if this install breaks, trade on the rules alone
       - run: python -m pytest -q tests          # never trade on broken code
 
       - name: Restore memory
@@ -94,7 +97,7 @@ jobs:
           path: |
             logs/portfolio1k.db
             logs/state.db
-          key: p1k-state-${{ github.run_id }}
+          key: p1k-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: p1k-state-
 
       - name: Check in with healthchecks.io
@@ -102,9 +105,12 @@ jobs:
         if: (github.event_name == 'schedule' || inputs.action == 'run-now') && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL" || true
       - name: Trade the session
-        if: github.event_name == 'schedule' || inputs.action == 'run-now'
+        id: trade
+        if: (github.event_name == 'schedule' || inputs.action == 'run-now') && vars.RUNNER != 'box'
         # 330 min leaves ~25 min of the 355-min job for setup and for saving memory, even on a slow day
-        run: python -m portfolio1k run --max-minutes 330
+        run: |
+          echo "T0=$(date +%s)" >> "$GITHUB_ENV"
+          python -m portfolio1k run --max-minutes 330
       - name: Status to phone
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'status'
         run: python -m portfolio1k status
@@ -113,10 +119,15 @@ jobs:
         run: python -m portfolio1k scorecard
       - name: Close the open trade
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'close-trade'
-        run: python -c "from portfolio1k import runner; r = runner.Runner(); r.handle('close')"
+        # Also tell a run that is trading right now (it reads phone commands every 30 s)
+        run: |
+          [ -z "$CONTROL_TOPIC" ] || curl -s -o /dev/null -d "close 1k $CONTROL_PIN" "https://ntfy.sh/$CONTROL_TOPIC" || true
+          python -c "from portfolio1k import runner; r = runner.Runner(); r.handle('close')"
       - name: Kill (sell everything and stop)
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'kill'
-        run: python -m portfolio1k kill
+        run: |
+          [ -z "$CONTROL_TOPIC" ] || curl -s -o /dev/null -d "kill 1k $CONTROL_PIN" "https://ntfy.sh/$CONTROL_TOPIC" || true
+          python -m portfolio1k kill
 
       - name: Export memory (for moving to your own computer; kept 3 days)
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'export-memory'
@@ -129,29 +140,38 @@ jobs:
           retention-days: 3
 
       - name: Save memory
-        if: always() && hashFiles('logs/portfolio1k.db') != ''
+        # status, scorecard and export only read; saving their copy could replace a newer one
+        if: >-
+          always() && hashFiles('logs/portfolio1k.db') != '' &&
+          (github.event_name == 'schedule' || contains(fromJSON('["run-now","kill","close-trade"]'), inputs.action))
         uses: actions/cache/save@v4
         with:
           path: |
             logs/portfolio1k.db
             logs/state.db
-          key: p1k-state-${{ github.run_id }}
+          key: p1k-state-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Hand off to a new run while the session still has time
         # A run lasts at most 330 min. Rather than hope GitHub's timer fires again, start the next run now;
         # it waits in line (concurrency) and picks up the memory saved above.
-        if: success() && (github.event_name == 'schedule' || inputs.action == 'run-now')
+        # Also after a crash mid-session (not after a fast failure, which would just repeat all day)
+        if: always() && !cancelled() && steps.trade.outcome != 'skipped' && steps.trade.outcome != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.trade.outcome }}
         run: |
+          if [ "$OUTCOME" != "success" ] && [ $(( $(date +%s) - ${T0:-0} )) -lt 600 ]; then
+            echo "The trade step failed within 10 minutes; not handing off (the backup starters will retry)."
+            exit 0
+          fi
           if python -m portfolio1k more-today; then
-            gh workflow run options-agent.yml --ref "${{ github.ref_name }}" -f action=run-now
+            gh workflow run options-agent.yml --ref main -f action=run-now
           fi
 
       - name: Tell my phone if anything failed
         if: failure() && env.NTFY_TOPIC != ''
         run: |
-          curl -s -H "Title: Options agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > options-agent to see the log. The stop at Alpaca still protects any open trade." "https://ntfy.sh/$NTFY_TOPIC"
+          curl -s -H "Title: Options agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > options-agent to see the log. If a trade is open, check it in the Alpaca app: its stop rests at Alpaca, but nothing else manages it until a run starts again." "https://ntfy.sh/$NTFY_TOPIC"
       - name: Tell healthchecks.io the run failed
         if: failure() && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL/fail" || true

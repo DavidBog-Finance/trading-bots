@@ -28,8 +28,17 @@ def main():
     if a.cmd == "more-today":
         # exit code 0 = today's session still has time left, so the cloud run should hand off to a new one
         from portfolio1k.runner import ET, now_et
-        clock = B.trading_client().get_clock()
-        more = R.more_session_today(now_et(), clock.is_open, clock.next_open.astimezone(ET))
+        more = None
+        for _ in range(3):
+            try:
+                clock = B.trading_client().get_clock()
+                more = R.more_session_today(now_et(), clock.is_open, clock.next_open.astimezone(ET))
+                break
+            except Exception as e:
+                print("clock check failed:", e)
+        if more is None:   # Alpaca unreachable: assume a normal weekday session rather than drop the day
+            n = now_et()
+            more = n.weekday() < 5 and R.hm("09:00") <= n.time() < R.hm("15:55")
         print("more session today:", "yes" if more else "no")
         sys.exit(0 if more else 1)
     r = runner.Runner()

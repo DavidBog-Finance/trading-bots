@@ -234,8 +234,10 @@ class Fake:
                                      next_close=datetime.now(runner.ET).replace(hour=16, minute=0))  # a regular day
 
     def get_open_position(self, sym):
-        if sym not in self.positions:
-            raise Exception("no position")
+        if not self.positions.get(sym):
+            e = Exception("position does not exist")
+            e.status_code = 404
+            raise e
         return types.SimpleNamespace(qty=str(self.positions[sym]))
 
     def get_order_by_id(self, oid):
@@ -286,13 +288,15 @@ def world(monkeypatch, isolated):
     def sell(client, sym, qty, bid, ask=0.0, urgent=True):
         log["sells"].append((sym, qty))
         log.setdefault("urgent", []).append(urgent)
-        fc.positions[sym] -= qty
-        return bid
+        n = min(qty, log.get("fill_limit", qty))
+        fc.positions[sym] -= n
+        return n, (bid if n else 0.0)
 
     monkeypatch.setattr(trader, "buy", buy)
     monkeypatch.setattr(trader, "place_stop", place_stop)
     monkeypatch.setattr(trader, "sell", sell)
     monkeypatch.setattr(trader, "cancel", lambda client, oid: log["cancels"].append(oid))
+    monkeypatch.setattr(trader, "cancel_open_sells", lambda client, sym: log["cancels"].append(f"all:{sym}"))
     monkeypatch.setattr(S, "USE_CLAUDE", True)
     monkeypatch.setattr(runner.N, "fetch_new_articles", lambda: [])
     return fc, clock, feed, log, isolated
@@ -438,6 +442,7 @@ def test_expiry_day_close_at_3pm():
 
 def test_cost_log_written_and_patient_exit(world):
     fc, clock, feed, log, sent = world
+    feed["quote"] = (2.00, 2.08)                 # the fresh quote after Claude's review = the chain's quote
     r = runner.Runner(fc)
     r.tick()
     with store.db() as con:
@@ -538,7 +543,8 @@ def test_trader_sell_ladder_then_market(monkeypatch):
             o = self.o[oid]
             o.status, o.filled_qty, o.filled_avg_price = "canceled", 1, 2.03   # 1 of 2 filled before the cancel
 
-    px = trader.sell(Cl(), "SPY261120C00500000", 2, 2.00, 2.10, urgent=False)
+    n, px = trader.sell(Cl(), "SPY261120C00500000", 2, 2.00, 2.10, urgent=False)
+    assert n == 2
     assert calls[0] == ("LimitOrderRequest", 2.05, 2)
     assert [c[1] for c in calls if c[0] == "replace"] == [2.03, 2.01, 2.0]
     assert calls[-1] == ("MarketOrderRequest", None, 1)
@@ -616,3 +622,148 @@ def test_half_day_summary_goes_out_after_the_early_close(world):
     r2.close_today, r2.close_day = time(16, 0), DAY       # a normal day: still waits for 16:15
     r2.daily_summary(at("13:20"))
     assert not sent
+
+
+# ---------- regressions from the 2026-11-25 audit ----------
+
+def _open(symbol="NVDA261120C00190000", qty=2, stop_id="s1"):
+    return {"trade_id": store.open_trade(symbol=symbol, qty=qty, entry=2.0, cost=200 * qty),
+            "symbol": symbol, "root": "NVDA", "direction": "call", "setup": "orb", "tier": "standard",
+            "qty": qty, "qty_open": qty, "entry": 2.0, "stop": 1.4, "stop_id": stop_id, "tp1_done": False,
+            "high": 2.0, "level": None, "expiry": "2026-11-20", "cost": 200 * qty, "realized": 0.0,
+            "opened": "2026-11-18T15:00:00+00:00"}
+
+
+def test_unfilled_exit_keeps_the_trade_and_re_places_the_stop(monkeypatch, isolated):
+    monkeypatch.setattr(C, "DRY_RUN", False)
+    monkeypatch.setattr(trader.time, "sleep", lambda s: None)
+    t = {"t": 0.0}
+    monkeypatch.setattr(trader.time, "time", lambda: t.__setitem__("t", t["t"] + 5) or t["t"])
+    monkeypatch.setattr(B, "alert", lambda m: None)
+
+    class Cl(Fake):
+        def __init__(self):
+            super().__init__()
+            self.positions = {"NVDA261120C00190000": 2}
+            self.n = 0
+
+        def submit_order(self, req):                       # nothing ever fills (halt / no bid)
+            self.n += 1
+            o = types.SimpleNamespace(id=f"o{self.n}", status="accepted", filled_qty=0, filled_avg_price=None, qty=2)
+            self.orders[o.id] = o
+            return o
+
+        def cancel_order_by_id(self, oid):
+            self.orders[oid].status = "canceled"
+    cl = Cl()
+    cl.orders["s1"] = types.SimpleNamespace(status="accepted", filled_qty=0, filled_avg_price=None, qty=2)
+    r = runner.Runner(cl)
+    p = _open()
+    r.set_position(p)
+    r.exit(p, R.Exit(2, "stop hit", "stop"), 1.5, 1.6)
+    kept = store.get("position")
+    assert kept and kept["qty"] == 2 and store.closed_trades() == []       # not booked as closed
+    assert kept["stop_id"] and cl.orders[kept["stop_id"]].status == "accepted"   # protected again
+
+
+def test_partial_exit_books_only_what_sold(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    fc.positions["NVDA261120C00190000"] = 2
+    fc.orders["s1"] = types.SimpleNamespace(status="accepted", filled_qty=0, filled_avg_price=None, qty=2)
+    p = _open()
+    r.set_position(p)
+    log["fill_limit"] = 1
+    r.exit(p, R.Exit(2, "time stop", "time"), 2.5, 2.6)
+    kept = store.get("position")
+    assert kept["qty"] == 1 and not kept["tp1_done"] and kept["realized"] == pytest.approx(50)
+    assert store.closed_trades() == []
+
+
+def test_alpaca_hiccup_is_not_mistaken_for_a_closed_trade(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    assert store.get("position")
+    fc.get_open_position = lambda s: (_ for _ in ()).throw(TimeoutError("read timed out"))
+    clock["now"] = at("10:00")
+    r.tick_safely()
+    assert store.get("position") and store.closed_trades() == []
+
+
+def test_claude_timeout_in_the_morning_does_not_block_exits(world, monkeypatch):
+    import subprocess
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    store.put("prep", None)
+
+    def boom(w, e):
+        raise subprocess.TimeoutExpired("claude", 180)
+    monkeypatch.setattr(brain, "game_plan", boom)
+    clock["now"] = at("15:50")                             # past the 15:45 time stop
+    r.tick_safely()
+    assert log["sells"] and store.get("position") is None
+    assert (store.get("prep") or {}).get("day") == DAY.isoformat()   # stored, not retried every tick
+
+
+def test_stale_memory_adopts_the_real_position_instead_of_buying(world):
+    fc, clock, feed, log, sent = world
+    fc.positions = {"NVDA261127C00190000": 2}                # Alpaca holds Y; old memory says X
+    store.put("position", _open(qty=1, stop_id=None))
+    r = runner.Runner(fc)
+    r.startup()
+    clock["now"] = at("10:00")
+    r.tick()                                               # X recorded gone
+    r.tick()                                               # a signal fires: adopt Y, don't buy
+    assert log["buys"] == []
+    assert (store.get("position") or {}).get("symbol") == "NVDA261127C00190000"
+
+
+def test_unknown_stop_state_does_not_stack_a_second_stop(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    old = store.get("position")["stop_id"]
+    n_stops = len(log["stops"])
+    real_get = fc.get_order_by_id
+    calls = {"n": 0}
+
+    def flaky(oid):
+        calls["n"] += 1
+        if calls["n"] == 2:                                # 1st = stop_filled, 2nd = stop_state
+            raise TimeoutError("timeout")
+        return real_get(oid)
+    fc.get_order_by_id = flaky
+    clock["now"] = at("10:00")
+    r.tick()
+    assert store.get("position")["stop_id"] == old and len(log["stops"]) == n_stops
+
+
+def test_quantity_mismatch_is_fixed_during_the_session(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    fc.positions["NVDA261120C00190000"] = 1                 # half the stop filled, then the order expired
+    clock["now"] = at("10:00")
+    r.tick()
+    p = store.get("position")
+    assert p["qty"] == 1 and log["stops"][-1][1] == 1
+
+
+def test_kill_sells_what_alpaca_holds_even_if_memory_forgot(world):
+    fc, clock, feed, log, sent = world
+    fc.positions = {"NVDA261127C00190000": 2}
+    r = runner.Runner(fc)
+    r.kill("test")
+    assert ("NVDA261127C00190000", 2) in log["sells"] and store.state()["killed"]
+
+
+def test_zero_deposits_warns_instead_of_silently_disabling_the_floor(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    monkeypatch.setattr(B, "net_deposits", lambda client: 0.0)
+    alerts = []
+    monkeypatch.setattr(B, "alert", lambda m: alerts.append(m))
+    r = runner.Runner(fc)
+    assert r.deposits() == 0 and r.deposits() == 0
+    assert len(alerts) == 1 and store.get("deposits") is None

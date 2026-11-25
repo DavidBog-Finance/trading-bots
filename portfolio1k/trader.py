@@ -1,7 +1,8 @@
 """Order handling for Portfolio 1k: patient limit buys, a stop at Alpaca, patient limit exits
 (market orders only for stops, kills and expiry closes).
-Alpaca options orders are DAY orders only, so the protective stop is placed again every morning
-for any position held overnight (runner.ensure_stop)."""
+The protective stop is a GTC order when Alpaca accepts it (GTC options orders since March 2026), so a trade held
+overnight stays protected before the first run of the next day; if Alpaca refuses GTC it falls back to a DAY
+stop, which manage() places again every morning."""
 import time
 import uuid
 
@@ -67,14 +68,18 @@ def place_stop(client, symbol: str, root: str, qty: int, stop_price: float) -> s
     sp = max(0.01, R.round_tick(root, stop_price, up=False))
     if C.DRY_RUN:
         return "dry-run-stop"
-    try:
-        o = client.submit_order(StopOrderRequest(symbol=symbol, qty=qty, side=OrderSide.SELL, stop_price=sp,
-                                                 time_in_force=TimeInForce.DAY, position_intent=PositionIntent.SELL_TO_CLOSE,
-                                                 client_order_id=f"p1k-stop-{uuid.uuid4().hex[:10]}"))
-        return str(o.id)
-    except Exception as e:
-        B.log.warning("[1k] could not place the stop for %s: %s", symbol, e)
-        return None
+    err = None
+    for tif in (TimeInForce.GTC, TimeInForce.DAY):
+        try:
+            o = client.submit_order(StopOrderRequest(symbol=symbol, qty=qty, side=OrderSide.SELL, stop_price=sp,
+                                                     time_in_force=tif, position_intent=PositionIntent.SELL_TO_CLOSE,
+                                                     client_order_id=f"p1k-stop-{uuid.uuid4().hex[:10]}"))
+            return str(o.id)
+        except Exception as e:
+            err = e
+    B.log.warning("[1k] could not place the stop for %s: %s", symbol, err)
+    # A stop may already be resting (e.g. placed before a lookup failed): keep its id rather than lose it
+    return open_stop_for(client, symbol)
 
 
 def cancel(client, oid: str | None):
@@ -96,15 +101,37 @@ def stop_filled(client, oid: str | None) -> tuple[int, float]:
 
 
 def stop_state(client, oid: str | None) -> tuple:
-    """(resting at Alpaca?, contracts on the order or None if unknown)."""
+    """(resting at Alpaca? True/False, or None if Alpaca could not be asked; contracts on the order or None).
+    None means 'unknown': the caller must NOT place a second stop on top of one that may still be resting."""
     if not oid or C.DRY_RUN or oid == "dry-run-stop":
         return bool(oid), None
     try:
         o = client.get_order_by_id(oid)
-    except Exception:
-        return False, None
+    except Exception as e:
+        B.log.info("[1k] stop lookup failed: %s", e)
+        return None, None
     q = getattr(o, "qty", None)
-    return _status(o) in ("new", "accepted", "pending_new", "held", "partially_filled"), int(float(q)) if q else None
+    st = _status(o)
+    if st in ("pending_cancel", "pending_replace"):
+        return None, None
+    return st in ("new", "accepted", "pending_new", "held", "partially_filled"), int(float(q)) if q else None
+
+
+def cancel_open_sells(client, symbol: str):
+    """Cancel every open sell order for this contract (the stop and any leftover exit order), so a new
+    sell is not refused for 'insufficient qty' because an old order still holds the contracts."""
+    if C.DRY_RUN:
+        return
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+    try:
+        rows = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol], limit=50))
+    except Exception as e:
+        B.log.info("[1k] open orders lookup failed: %s", e)
+        return
+    for o in rows:
+        if str(getattr(o.side, "value", o.side)).lower() == "sell":
+            cancel(client, str(o.id))
 
 
 def open_stop_for(client, symbol: str) -> str | None:
@@ -155,17 +182,24 @@ def _market_sell(client, symbol: str, qty: int):
                                                client_order_id=f"p1k-exit-{uuid.uuid4().hex[:10]}"))
     o = _wait(client, o.id, 30)
     if _status(o) != "filled":
-        B.alert(f"[1k] Exit order for {symbol} is {_status(o)} after 30 s. Check Alpaca.")
+        try:
+            client.cancel_order_by_id(o.id)   # don't leave an untracked sell resting
+            o = _wait(client, o.id, 5)
+        except Exception:
+            pass
+        B.alert(f"[1k] Exit order for {symbol} was {_status(o)} after 30 s; it is cancelled and the trade is still "
+                f"managed (stop re-placed). Check Alpaca.")
     return int(float(o.filled_qty or 0)), float(o.filled_avg_price or 0)
 
 
-def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bool = True) -> float:
-    """Sell to close; returns the average fill price (bid in a dry run).
+def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bool = True) -> tuple[int, float]:
+    """Sell to close; returns (contracts actually sold, their average price). (0, 0) = nothing filled:
+    the caller must treat the position as still open.
     urgent (stops, kills, expiry): market order at once. Otherwise a patient limit ladder from the mid
     down to the bid, about 5 s per step, then market for anything still unsold."""
     if C.DRY_RUN:
         B.log.info("[1k] DRY RUN sell %d %s @ ~%.2f", qty, symbol, bid)
-        return bid
+        return qty, bid
     ladder = [] if urgent else R.sell_ladder((R.parse_occ(symbol) or {}).get("root", symbol), bid, ask)
     done, value = 0, 0.0
     if ladder:
@@ -192,4 +226,4 @@ def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bo
     if done < qty:
         q, px = _market_sell(client, symbol, qty - done)
         done, value = done + q, value + q * px
-    return value / done if done else float(bid or 0)
+    return done, (value / done if done else 0.0)

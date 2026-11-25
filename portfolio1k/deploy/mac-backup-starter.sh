@@ -25,6 +25,8 @@ fi
 [ "\$(TZ=America/New_York date +%u)" -le 5 ] || exit 0                    # Mon-Fri
 hm=\$(TZ=America/New_York date +%H%M)
 [ "\$hm" -ge 900 ] && [ "\$hm" -le 1530 ] || exit 0                        # 9:00 am-3:30 pm New York
+# Moved to your own always-on computer (RUNNER=box)? Then GitHub must not trade too.
+[ "\$("$GH" variable get RUNNER -R "$REPO" 2>/dev/null)" = "box" ] && exit 0
 busy=\$("$GH" run list -R "$REPO" -w options-agent.yml -L 20 --json status -q '[.[] | select(.status != "completed")] | length') || exit 0
 if [ "\$busy" = "0" ]; then
   "$GH" workflow run options-agent.yml -R "$REPO" --ref main -f action=run-now && echo "\$(date) no run going, started one"

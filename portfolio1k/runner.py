@@ -66,7 +66,13 @@ class Runner:
         if cached and cached.get("day") == date.today().isoformat():
             return cached["value"]
         v = B.net_deposits(self.client)
-        store.put("deposits", {"day": date.today().isoformat(), "value": v})
+        if v > 0:
+            store.put("deposits", {"day": date.today().isoformat(), "value": v})
+        elif self.st.get("dep_warn_day") != date.today().isoformat():
+            # 0 turns the 50% account floor off, so say so (set NET_DEPOSITS_OVERRIDE on a paper account)
+            self.st["dep_warn_day"] = date.today().isoformat()
+            self.problem("Deposits read as $0, so the account-floor kill switch is OFF. "
+                         "Set the NET_DEPOSITS_OVERRIDE variable to what you put in.")
         return v
 
     def notify(self, msg: str, title: str, prio: str = "default"):
@@ -166,8 +172,16 @@ class Runner:
         p = store.get("prep") or {}
         if p.get("day") == today or now.hour < 8:
             return
-        earn = data.earnings_dates(S.WATCHLIST, now.date())
-        plan = brain.game_plan(S.WATCHLIST, earn) if S.USE_CLAUDE and not brain.available() else None
+        try:
+            earn = data.earnings_dates(S.WATCHLIST, now.date())
+        except Exception as e:
+            B.log.warning("[1k] earnings calendar failed (%s); single stocks skipped today", e)
+            earn = {s: "unknown" for s in S.WATCHLIST if s not in S.ETFS}
+        try:
+            plan = brain.game_plan(S.WATCHLIST, earn) if S.USE_CLAUDE and not brain.available() else None
+        except Exception as e:
+            B.log.warning("[1k] no game plan today: %s", e)
+            plan = None
         store.put("prep", {"day": today, "earnings": earn, "plan": plan})
         if plan:
             store.event("plan", plan.get("summary", ""))
@@ -226,12 +240,30 @@ class Runner:
         self.save()
 
     def kill(self, why: str):
-        p = self.position()
-        if p:
-            self.exit(p, R.Exit(p["qty"], why, "kill"))
         self.st["killed"] = True
         self.save()
-        self.notify(f"{why}. Sold everything and stopped. Send 'resume 1k' to restart.", "KILLED", "high")
+        p = self.position()
+        if p:
+            try:
+                self.exit(p, R.Exit(p["qty"], why, "kill"))
+            except Exception as e:
+                B.log.warning("[1k] kill exit failed: %s", e)
+        left = {}
+        if not C.DRY_RUN:
+            # The memory can be out of date, so also sell any watchlist option Alpaca still holds
+            try:
+                for sym, (q, _) in self._held_options().items():
+                    trader.cancel_open_sells(self.client, sym)
+                    sold, _ = trader.sell(self.client, sym, q, 0.0, 0.0, urgent=True)
+                    if sold < q:
+                        left[sym] = q - sold
+            except Exception as e:
+                B.log.warning("[1k] kill sweep failed: %s", e)
+                left["(could not check)"] = 0
+        msg = (f"{why}. Sold everything and stopped." if not left else
+               f"{why}. Trading stopped, but these could not be sold now (market closed or no bid): "
+               f"{', '.join(left)}. Check the Alpaca app.")
+        self.notify(msg + " Send 'resume 1k' to restart.", "KILLED", "high")
 
     # ---------- managing the open trade ----------
     def manage(self, now: datetime, next_day: date):
@@ -243,19 +275,25 @@ class Runner:
         if q:
             self.finish(p, px, q, R.Exit(q, "stop filled at Alpaca", "stop"))
             return
-        held = self.held_qty(p["symbol"])
+        held = self.held_qty(p["symbol"]) if not C.DRY_RUN else p["qty"]
         if held == 0 and not C.DRY_RUN:
             px = self.closing_fill(p) or p.get("last_mark", p["entry"])
             self.problem(f"{p['symbol']} is no longer in the account but this program did not sell it. "
                          f"Recording it closed at ${px:.2f}.")
             self.finish(p, px, p["qty"], R.Exit(p["qty"], "position gone", "unknown"))
             return
-        # 2) Make sure a stop for the full quantity is resting at Alpaca (DAY orders expire every evening)
+        if held != p["qty"]:   # a stop or exit filled in part, or a buy filled late: Alpaca's number wins
+            self.problem(f"Memory said {p['qty']} {p['symbol']}, Alpaca holds {held}. Using Alpaca's number "
+                         f"and re-placing the stop.")
+            trader.cancel_open_sells(self.client, p["symbol"])
+            p["qty"], p["stop_id"] = held, None
+            self.set_position(p)
+        # 2) Make sure a stop for the full quantity is resting at Alpaca
         active, stop_qty = trader.stop_state(self.client, p.get("stop_id"))
         if active and stop_qty is not None and stop_qty != p["qty"]:
-            trader.cancel(self.client, p.get("stop_id"))
+            trader.cancel_open_sells(self.client, p["symbol"])
             active = False
-        if not active:
+        if active is False:
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             if not p["stop_id"] and not p.get("stop_alerted"):
                 p["stop_alerted"] = True
@@ -283,10 +321,18 @@ class Runner:
             self.exit(p, ex, bid, ask)
 
     def held_qty(self, symbol: str) -> int:
+        """Contracts Alpaca holds. 0 only when Alpaca says the position does not exist (checked twice);
+        a timeout or server error raises, so a hiccup is never mistaken for 'the trade is gone'."""
         try:
             return int(float(self.client.get_open_position(symbol).qty))
-        except Exception:
-            return 0
+        except Exception as e:
+            txt = str(e).lower()
+            if getattr(e, "status_code", None) != 404 and "does not exist" not in txt and "not found" not in txt:
+                raise
+        for pos in self.client.get_all_positions():
+            if pos.symbol == symbol:
+                return int(float(pos.qty))
+        return 0
 
     def exit(self, p: dict, ex: R.Exit, bid: float | None = None, ask: float | None = None):
         if bid is None or ask is None:
@@ -295,31 +341,43 @@ class Runner:
             except Exception:
                 bid, ask = p.get("last_mark", p["entry"]), 0.0
         trader.cancel(self.client, p.get("stop_id"))
+        trader.cancel_open_sells(self.client, p["symbol"])   # anything else holding the contracts
         q, px = trader.stop_filled(self.client, p.get("stop_id"))  # filled while we were cancelling?
         if q:
             self.finish(p, px, q, R.Exit(q, "stop filled at Alpaca", "stop"))
             return
         qty = min(ex.qty, p["qty"])
-        px = trader.sell(self.client, p["symbol"], qty, bid, ask or 0.0, urgent=R.exit_is_urgent(ex.kind))
-        fc = R.fill_cost("sell", bid or 0, ask or 0, px)
-        if fc["slip"] is not None:
-            p["exit_slip_q"] = p.get("exit_slip_q", 0.0) + fc["slip"] * qty
-            p["exit_slip_pct_q"] = p.get("exit_slip_pct_q", 0.0) + fc["slip_pct"] * qty
-            p["exit_q"] = p.get("exit_q", 0) + qty
-            p["exit_bid"], p["exit_ask"] = bid, ask
-        if qty < p["qty"]:   # take profit 1 on 2+ contracts: keep the rest with a breakeven stop
-            p["realized"] = p.get("realized", 0.0) + (px - p["entry"]) * qty * 100
-            p["qty"] -= qty
-            p["tp1_done"] = True
-            p["stop"] = p["entry"]
+        sold, px = trader.sell(self.client, p["symbol"], qty, bid, ask or 0.0, urgent=R.exit_is_urgent(ex.kind))
+        if sold <= 0:   # nothing filled (halt, no bid, market closed): still holding, so protect it again
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             self.set_position(p)
-            self.notify(f"Sold {qty} {p['symbol']} at ${px:.2f} ({px / p['entry'] - 1:+.0%}): {ex.reason}. "
-                        f"Holding {p['qty']}, stop moved to breakeven ${p['entry']:.2f}.", "SELL (half)")
+            self.problem(f"Tried to sell {p['symbol']} ({ex.reason}) but nothing filled. Still holding {p['qty']}; "
+                         f"stop re-placed at ${p['stop']:.2f}. Trying again on the next check.")
+            return
+        fc = R.fill_cost("sell", bid or 0, ask or 0, px)
+        if fc["slip"] is not None:
+            p["exit_slip_q"] = p.get("exit_slip_q", 0.0) + fc["slip"] * sold
+            p["exit_slip_pct_q"] = p.get("exit_slip_pct_q", 0.0) + fc["slip_pct"] * sold
+            p["exit_q"] = p.get("exit_q", 0) + sold
+            p["exit_bid"], p["exit_ask"] = bid, ask
+        if sold < p["qty"]:   # take profit 1 on 2+ contracts, or an exit that filled only in part
+            p["realized"] = p.get("realized", 0.0) + (px - p["entry"]) * sold * 100
+            p["qty"] -= sold
+            if ex.kind == "tp1":
+                p["tp1_done"] = True
+                p["stop"] = p["entry"]
+            p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
+            self.set_position(p)
+            if ex.kind == "tp1":
+                self.notify(f"Sold {sold} {p['symbol']} at ${px:.2f} ({px / p['entry'] - 1:+.0%}): {ex.reason}. "
+                            f"Holding {p['qty']}, stop moved to breakeven ${p['entry']:.2f}.", "SELL (half)")
+            else:
+                self.problem(f"Sold only {sold} of {sold + p['qty']} {p['symbol']} ({ex.reason}). Holding "
+                             f"{p['qty']} with the stop at ${p['stop']:.2f}; trying again on the next check.")
             return
         if ex.kind == "tp1":
             p["tp1_done"] = True
-        self.finish(p, px, qty, ex)
+        self.finish(p, px, sold, ex)
 
     def closing_fill(self, p: dict) -> float | None:
         """Average price of the sells that closed this contract while the program was not watching."""
@@ -383,6 +441,9 @@ class Runner:
                         st.setdefault("seen", []).append(key)
                         sigs.append(sig)
         self.save()
+        if sigs and not C.DRY_RUN and self._held_options():
+            self._reconcile()   # Alpaca holds an option the memory lost: take it back instead of buying another
+            return "Alpaca holds an option the memory did not know about"
         for sig in R.merge_signals(sigs):
             store.event("setup", f"{sig.symbol} {'+'.join([sig.setup, *sig.extra.get('also', [])])} {sig.direction}")
             spy_ok = R.spy_agrees(spy, sig.direction)
@@ -426,6 +487,20 @@ class Runner:
         if not review["take"]:
             store.event("skip:claude", f"{sig.symbol} {sig.setup} {sig.direction}: Claude {review['grade']}: {review['reason']}")
             return False
+        if not C.DRY_RUN:
+            try:
+                b2, a2, _ = data.option_quote(pick["symbol"])
+            except Exception:
+                b2 = a2 = 0
+            if b2 > 0 and a2 > 0:
+                pick = {**pick, "bid": b2, "ask": a2}
+            bad = R.contract_problems(pick, sig.symbol, today, date.fromisoformat(e) if e else None,
+                                      getattr(self, "next_day", None))
+            late = R.entry_block(self.st, now_et(), equity, self.deposits(), bool(self.position()), S.FOMC_DAYS,
+                                 getattr(self, "close_today", None))
+            if bad or late:
+                store.event("skip:contract", f"{pick['symbol']}: after Claude's review: {late or bad}")
+                return False
         tier, tier_why = R.choose_tier(sig, review["grade"], True, self.st, R.iso_week(today))
         budget = full_budget if tier == "full" else R.budget_for("standard", equity, cash)
         qty = R.contracts_for(budget, pick["ask"])
@@ -541,23 +616,35 @@ class Runner:
         if dep > 0 and equity <= dep * S.KILL_PCT and not self.st.get("killed"):
             self.kill(f"Equity {fmt_money(equity)} hit the floor ({S.KILL_PCT:.0%} of {fmt_money(dep)} deposited)")
             return
-        self.prep(now)
+        if clock.is_open:
+            # Protect the open trade first: nothing slow or fragile (Claude, news, earnings) runs before it
+            syms = sorted(set(S.WATCHLIST) | {"SPY"} | ({self.position()["root"]} if self.position() else set()))
+            try:
+                self.bars = data.intraday_bars(syms, now)
+            except Exception as e:
+                B.log.warning("[1k] bars failed: %s", e)
+                self.bars = {}
+            next_day = clock.next_open.astimezone(ET).date() if clock.next_open.astimezone(ET).date() > now.date() \
+                else R.add_trading_days(now.date(), 1)
+            try:
+                self.close_today = clock.next_close.astimezone(ET).time()   # 13:00 on half days
+                self.close_day = now.date()
+            except Exception:
+                self.close_today = None
+            self.next_day = next_day
+            self.manage(now, next_day)
+        try:
+            self.prep(now)
+        except Exception as e:
+            B.log.warning("[1k] morning prep failed: %s", e)
         if not clock.is_open:
             self.daily_summary(now)
             return
-        syms = sorted(set(S.WATCHLIST) | {"SPY"} | ({self.position()["root"]} if self.position() else set()))
-        self.bars = data.intraday_bars(syms, now)
         if not self.daily:
-            self.daily = data.daily_closes(S.WATCHLIST)
-        next_day = clock.next_open.astimezone(ET).date() if clock.next_open.astimezone(ET).date() > now.date() \
-            else R.add_trading_days(now.date(), 1)
-        try:
-            self.close_today = clock.next_close.astimezone(ET).time()   # 13:00 on half days
-            self.close_day = now.date()
-        except Exception:
-            self.close_today = None
-        self.next_day = next_day
-        self.manage(now, next_day)
+            try:
+                self.daily = data.daily_closes(S.WATCHLIST)
+            except Exception as e:
+                B.log.warning("[1k] daily closes failed: %s", e)
         self.news(now)
         why = self.scan(now, acct, equity)
         if why and why != self.st.get("last_block"):
@@ -571,9 +658,13 @@ class Runner:
         if max_minutes:
             today_end = now_et().replace(hour=16, minute=20, second=0, microsecond=0)
             end_et = min(now_et() + timedelta(minutes=max_minutes), today_end)
-            clock = self.client.get_clock()
-            nxt = clock.next_open.astimezone(ET)
-            if now_et() >= today_end or (not clock.is_open and nxt.date() != now_et().date()):
+            try:
+                clock = self.client.get_clock()
+                no_session = not clock.is_open and clock.next_open.astimezone(ET).date() != now_et().date()
+            except Exception as e:
+                B.log.warning("[1k] clock check failed (%s); running anyway", e)
+                no_session = False
+            if now_et() >= today_end or no_session:
                 B.log.info("[1k] no session left today; exiting")
                 self.tick_safely()  # still answers phone commands and sends the summary
                 return

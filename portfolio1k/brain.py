@@ -64,7 +64,7 @@ def game_plan(watchlist: list, earnings: dict) -> dict | None:
     try:
         return ask("p1k_plan", PLAN_SYSTEM, {"watchlist": watchlist, "earnings_next_10_days": earnings,
                                              "headlines": news}, PLAN_SCHEMA)
-    except (CC.BudgetExceeded, RuntimeError) as e:
+    except Exception as e:  # any Claude failure (limit, timeout, bad JSON, outage): carry on without it
         B.log.warning("[1k] no game plan today: %s", e)
         return None
 
@@ -75,7 +75,7 @@ def review(payload: dict) -> dict | None:
         return None
     try:
         return ask("p1k_review", REVIEW_SYSTEM, payload, REVIEW_SCHEMA)
-    except (CC.BudgetExceeded, RuntimeError) as e:
+    except Exception as e:  # any Claude failure (limit, timeout, bad JSON, outage): carry on without it
         B.log.warning("[1k] trade review unavailable: %s", e)
         return None
 

@@ -49,8 +49,8 @@ jobs:
       FLOW_TOPIC: ${{ secrets.FLOW_TOPIC }}
       ALPACA_PAPER: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -59,7 +59,7 @@ jobs:
       - run: python -m pytest -q tests/test_flowlog.py
 
       - name: Restore the log
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: logs/flowlog.db
           key: flow-state-${{ github.run_id }}
@@ -84,7 +84,7 @@ jobs:
       - name: Export CSV
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'export'
         run: python -m flowlog export logs/flowlog.csv > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'workflow_dispatch' && inputs.action == 'export'
         with:
           name: flowlog
@@ -93,7 +93,7 @@ jobs:
 
       - name: Save the log
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: logs/flowlog.db
           key: flow-state-${{ github.run_id }}

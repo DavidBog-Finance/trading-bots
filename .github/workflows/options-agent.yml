@@ -172,7 +172,7 @@ jobs:
       - name: Tell my phone if anything failed
         if: failure() && env.NTFY_TOPIC != ''
         run: |
-          curl -s -H "Title: Options agent run FAILED" -H "Priority: high" -d "Open GitHub > Actions > options-agent to see the log. If a trade is open, check it in the Alpaca app: its stop rests at Alpaca, but nothing else manages it until a run starts again." "https://ntfy.sh/$NTFY_TOPIC"
+          curl -s -H "Title: Options bot run failed" -H "Priority: high" -H "Tags: warning" -d "Open GitHub > Actions > options-agent for the log. An open trade keeps its stop at Alpaca, but nothing else manages it until the next run starts." "https://ntfy.sh/$NTFY_TOPIC"
       - name: Tell healthchecks.io the run failed
         if: failure() && env.HEALTHCHECK_URL != ''
         run: curl -fsS -m 10 --retry 3 -o /dev/null "$HEALTHCHECK_URL/fail" || true

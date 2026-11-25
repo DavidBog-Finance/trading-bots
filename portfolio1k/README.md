@@ -65,9 +65,24 @@ fees (`P1K_FEE_PER_CONTRACT_SIDE`, default $0.05). The status, daily summary and
 "paid X% vs mid in, Y% out, spread Z%, about $N per round trip x trades/yr = $M/yr", plus win rate and
 average result for each Claude grade (A+, A, B, rules only), so you can see whether the grades predict anything.
 
+## Phone alerts
+
+Every alert names the contract the same way: ticker, strike, C or P, expiration (e.g. `NVDA 142P 11/27`).
+
+| Alert | Title | Body |
+| --- | --- | --- |
+| Buy filled | `BUY NVDA 142P 11/27` | contracts @ price = cost, stop, targets, setup, Claude's grade and win chance |
+| Take profit 1 | `TRIM NVDA 142P 11/27 +41%` | sold @ price, profit locked in, what is left, breakeven stop |
+| Trade closed | `SELL NVDA 142P 11/27 -26%` | contracts @ price (bought at), P&L $ and %, time held, why, account and today's P&L |
+| Problem | `Needs attention` | what went wrong and what the bot did about it |
+| Daily / weekly | `Daily summary`, `Weekly scorecard` | trades closed today, account, open trade, record, costs, grades |
+
+Green circle = buy, check mark = win, red X = loss, warning sign = problem. Paper alerts carry a small
+"paper" label; live alerts start with "LIVE".
+
 ## Near-miss report
 
-After the close (4:15 pm New York), on any day a setup fired, your phone gets "1k Near misses today":
+After the close (4:15 pm New York), on any day a setup fired, your phone gets "Setups today":
 how many setups fired, how many became trades, why the others were skipped (SPY against it, no good
 contract, Claude said no, too expensive, not filled) and a few examples. It shows whether the bot is too picky.
 

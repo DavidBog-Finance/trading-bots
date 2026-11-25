@@ -35,7 +35,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(global_state, "DB_PATH", str(tmp_path / "state.db"))
     monkeypatch.setattr(B, "LOG_FILE", str(tmp_path / "t.csv"))
     sent = []
-    monkeypatch.setattr(B, "notify", lambda msg, title="", prio="default": sent.append((title, msg)))
+    monkeypatch.setattr(B, "notify", lambda msg, title="", prio="default", tags=None: sent.append((title, msg)))
     return sent
 
 
@@ -308,7 +308,7 @@ def test_trade_lifecycle_buy_tp1_then_stop(world):
     r.tick()
     assert log["buys"] == [("NVDA261120C00190000", 2)]                 # 50% of $1,000 / $208 = 2 contracts
     assert log["stops"][0] == ("NVDA261120C00190000", 2, round(2.04 * 0.7, 2))
-    assert any(t == "1k BUY" for t, _ in sent)
+    assert any(t.startswith("BUY ") for t, _ in sent)
     assert "one position" in R.entry_block(store.state(), clock["now"], 1000, 1000, True, set())
     # +45%: take profit 1 sells half and moves the stop to breakeven
     clock["now"] = at("10:20")
@@ -327,7 +327,7 @@ def test_trade_lifecycle_buy_tp1_then_stop(world):
     assert t["pnl"] == pytest.approx((2.94 - 2.04) * 100 + (2.0 - 2.04) * 100) and t["kind"] == "stop"
     assert t["slip"] is None                                        # breakeven stop, not the planned -30%
     assert store.state()["last_result"] == "win"
-    assert any(title == "1k SELL" for title, _ in sent)
+    assert any(title.startswith("SELL ") for title, _ in sent)
 
 
 def test_claude_skip_and_fallback(world, monkeypatch):
@@ -351,7 +351,7 @@ def test_kill_floor_and_phone_commands(world):
     fc.equity = 480
     r.tick()
     assert store.state()["killed"] and log["sells"] and store.get("position") is None
-    assert any(t == "1k KILLED" for t, _ in sent)
+    assert any(t.startswith("KILLED") for t, _ in sent)
     r.handle("resume")
     assert not store.state()["killed"]
     r.handle("nofull")
@@ -472,12 +472,12 @@ def test_missing_stop_alerts_once(world, monkeypatch):
     p = store.get("position")
     fc.orders[p["stop_id"]] = types.SimpleNamespace(status="canceled", filled_qty=0, filled_avg_price=None)
     alerts = []
-    monkeypatch.setattr(B, "alert", lambda msg: alerts.append(msg))
+    monkeypatch.setattr(B, "alert", lambda msg, title="": alerts.append(msg))
     monkeypatch.setattr(trader, "place_stop", lambda *a: None)
     clock["now"] = at("10:00")
     r.tick()
     r.tick()
-    assert sum("No stop order" in a for a in alerts) == 1
+    assert sum("no stop order" in a for a in alerts) == 1
 
 
 def test_startup_adopts_a_position_the_memory_lost(world):
@@ -488,7 +488,7 @@ def test_startup_adopts_a_position_the_memory_lost(world):
     r.startup()
     p = store.get("position")
     assert p["qty"] == 2 and p["entry"] == 2.10 and p["setup"] == "recovered" and p["stop"] == round(2.10 * 0.7, 2)
-    assert any(t == "1k Recovered trade" for t, _ in sent)
+    assert any(t.startswith("RECOVERED ") for t, _ in sent)
     fc.positions["NVDA261120C00190000"] = 1
     runner.Runner(fc).startup()
     assert store.get("position")["qty"] == 1
@@ -503,7 +503,7 @@ def test_phone_command_needs_pin(world, monkeypatch):
     monkeypatch.setattr(runner.urllib.request, "urlopen", lambda url, timeout=10: io.BytesIO("\n".join(json.dumps(m) for m in msgs).encode()))
     r = runner.Runner(fc)
     r.commands()
-    assert not store.state().get("paused") and any(t == "1k Command ignored" for t, _ in sent)
+    assert not store.state().get("paused") and any(t == "Command ignored" for t, _ in sent)
     msgs[0] = {"event": "message", "id": "b", "time": _t.time(), "message": "pause 1k 4821"}
     r.last_cmd = 0
     r.commands()
@@ -639,7 +639,7 @@ def test_unfilled_exit_keeps_the_trade_and_re_places_the_stop(monkeypatch, isola
     monkeypatch.setattr(trader.time, "sleep", lambda s: None)
     t = {"t": 0.0}
     monkeypatch.setattr(trader.time, "time", lambda: t.__setitem__("t", t["t"] + 5) or t["t"])
-    monkeypatch.setattr(B, "alert", lambda m: None)
+    monkeypatch.setattr(B, "alert", lambda m, title="": None)
 
     class Cl(Fake):
         def __init__(self):
@@ -763,7 +763,7 @@ def test_zero_deposits_warns_instead_of_silently_disabling_the_floor(world, monk
     fc, clock, feed, log, sent = world
     monkeypatch.setattr(B, "net_deposits", lambda client: 0.0)
     alerts = []
-    monkeypatch.setattr(B, "alert", lambda m: alerts.append(m))
+    monkeypatch.setattr(B, "alert", lambda m, title="": alerts.append(m))
     r = runner.Runner(fc)
     assert r.deposits() == 0 and r.deposits() == 0
     assert len(alerts) == 1 and store.get("deposits") is None
@@ -844,3 +844,38 @@ def test_taken_trade_keeps_its_shadow_flags_and_win_chance(world, monkeypatch):
     with store.db() as con:
         row = dict(con.execute("select shadow, claude from trades").fetchone())
     assert set(_j.loads(row["shadow"])) == set(R.SHADOW_FILTERS) and _j.loads(row["claude"])["win_prob"] == 0.6
+
+
+def test_phone_alert_format_is_clean_and_complete():
+    from datetime import datetime, timedelta, timezone
+    assert R.contract_label("NVDA261127P00142500") == "NVDA 142.5P 11/27"
+    assert R.contract_label("SPY261204C00600000") == "SPY 600C 12/4"
+    assert R.contract_label("weird") == "weird"
+    title, body = R.buy_alert("NVDA261127P00142000", 2, 3.05, 2.29, 0.25, 0.40, 0.80, "orb", "closed below the range low",
+                              "A+", 0.62, "clean break with volume", "standard", "")
+    assert title == "BUY NVDA 142P 11/27" and title.isascii()
+    assert body.splitlines()[0] == "2 @ $3.05 = $610.00 (standard size)"
+    assert "Stop $2.29 (-25%)" in body and "Targets $4.27 (+40%) / $5.49 (+80%)" in body
+    assert "Opening-range breakout" in body and "Claude: A+, 62% win chance" in body
+    title, body, tags = R.sell_alert("AMZN261127P00235000", 2, 3.05, 2.10, -190.0, 610.0, "stop hit (-31%)", "1h 05m",
+                                     1053.62, -291.0)
+    assert title == "SELL AMZN 235P 11/27 -31%" and tags == "x"
+    assert "P&L -$190.00 (-31%), held 1h 05m" in body and "Account $1,053.62, today -$291.00" in body
+    assert R.sell_alert("X261127C00010000", 1, 1, 2, 100.0, 100.0, "tp")[2] == "white_check_mark"
+    title, body = R.trim_alert("QQQ261127C00500000", 1, 2.00, 2.80, 1, 2.00)
+    assert title == "TRIM QQQ 500C 11/27 +40%" and "locked in +$80.00" in body and "breakeven $2.00" in body
+    now = datetime(2026, 11, 25, 16, 0, tzinfo=timezone.utc)
+    assert R.held_for((now - timedelta(minutes=35)).isoformat(), now) == "35m"
+    assert R.held_for((now - timedelta(minutes=125)).isoformat(), now) == "2h 05m"
+    assert R.held_for(None, now) == "" and R.held_for("bad", now) == ""
+    assert R.trade_line({"symbol": "NVDA261127P00142000", "pnl": -101.0, "cost": 390.0,
+                         "reason": "setup failed: underlying closed 142.6 back through 142.5"}).startswith(
+        "NVDA 142P 11/27: -$101.00 (-26%), setup failed")
+
+
+def test_buy_and_sell_alerts_use_the_contract_label(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    buys = [(t, m) for t, m in sent if t.startswith("BUY ")]
+    assert buys and buys[0][0].isascii() and " @ $" in buys[0][1]

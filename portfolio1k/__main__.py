@@ -54,7 +54,7 @@ def main():
             from portfolio1k import brain
             txt += "\nClaude: " + brain.check()
         print(txt)
-        B.notify(txt, "1k Status", "low")
+        B.notify(txt, "Status", "low", "bar_chart")
     elif a.cmd == "kill":
         r.kill("kill button pressed")
 

@@ -542,6 +542,104 @@ def parse_occ(symbol: str) -> dict | None:
             "direction": "call" if rest[6] == "C" else "put", "strike": int(rest[7:]) / 1000}
 
 
+
+# ---------- phone alerts: one clean format everywhere (pure, so tests pin the exact text) ----------
+
+SETUP_NAMES = {"orb": "Opening-range breakout", "pullback": "VWAP pullback", "news": "News",
+               "recovered": "Recovered from Alpaca"}
+
+
+def fmt_money(x: float) -> str:
+    return f"-${-x:,.2f}" if x < 0 else f"${x:,.2f}"
+
+
+def fmt_signed(x: float) -> str:
+    """+$12.50 / -$190.00, for P&L."""
+    return f"+${x:,.2f}" if x > 0 else fmt_money(x)
+
+
+def contract_label(symbol: str) -> str:
+    """'NVDA261127P00142500' -> 'NVDA 142.5P 11/27'. The raw symbol if it does not parse."""
+    info = parse_occ(symbol)
+    if not info:
+        return symbol
+    e = info["expiry"]
+    return f"{info['root']} {info['strike']:g}{info['direction'][0].upper()} {e.month}/{e.day}"
+
+
+def held_for(opened_iso: str | None, now: datetime) -> str:
+    """'35m', '2h 05m' or '3d 4h' since the trade opened ('' if unknown)."""
+    if not opened_iso:
+        return ""
+    try:
+        mins = int((now - datetime.fromisoformat(opened_iso)).total_seconds() // 60)
+    except (TypeError, ValueError):
+        return ""
+    if mins < 0:
+        return ""
+    if mins < 60:
+        return f"{mins}m"
+    if mins < 24 * 60:
+        return f"{mins // 60}h {mins % 60:02d}m"
+    return f"{mins // 1440}d {mins % 1440 // 60}h"
+
+
+def setup_name(setup: str) -> str:
+    """'orb+news' -> 'Opening-range breakout + News'."""
+    return " + ".join(SETUP_NAMES.get(s, s) for s in (setup or "").split("+") if s) or "-"
+
+
+def _short(text: str, n: int = 160) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[: n - 3].rstrip() + "..."
+
+
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def buy_alert(symbol: str, qty: int, price: float, stop: float, stop_pct: float, tp1: float, tp2: float,
+              setup: str, note: str, grade: str, win_prob, reason: str, size: str, size_why: str = "") -> tuple:
+    """(title, body) for a filled buy. Titles stay plain ASCII (HTTP headers)."""
+    lbl = contract_label(symbol)
+    claude = f"Claude: {grade}" + (f", {float(win_prob):.0%} win chance" if win_prob is not None else "")
+    lines = [f"{qty} @ ${price:.2f} = {fmt_money(price * qty * 100)} ({size} size)",
+             f"Stop ${stop:.2f} (-{stop_pct:.0%}), resting at Alpaca",
+             f"Targets ${price * (1 + tp1):.2f} (+{tp1:.0%}) / ${price * (1 + tp2):.2f} (+{tp2:.0%})",
+             f"Setup: {setup_name(setup)}. {_cap(_short(note, 110))}",
+             f"{claude}. {_short(reason)}"]
+    if size_why:
+        lines.append(f"Standard size: {_short(size_why, 100)}")
+    return f"BUY {lbl}", "\n".join(lines)
+
+
+def sell_alert(symbol: str, qty: int, entry: float, price: float, pnl: float, cost: float, why: str,
+               held: str = "", equity: float | None = None, day_pnl: float | None = None) -> tuple:
+    """(title, body, tags) for a trade that is now fully closed. pnl covers every part of the trade."""
+    pct = pnl / cost if cost else 0.0
+    lines = [f"{qty} @ ${price:.2f} (bought ${entry:.2f})",
+             f"P&L {fmt_signed(pnl)} ({pct:+.0%})" + (f", held {held}" if held else ""),
+             f"Why: {why}"]
+    if equity:
+        lines.append(f"Account {fmt_money(equity)}" + (f", today {fmt_signed(day_pnl)}" if day_pnl is not None else ""))
+    tags = "white_check_mark" if pnl > 0 else "x" if pnl < 0 else "heavy_minus_sign"
+    return f"SELL {contract_label(symbol)} {pct:+.0%}", "\n".join(lines), tags
+
+
+def trim_alert(symbol: str, sold: int, entry: float, price: float, left: int, new_stop: float) -> tuple:
+    """(title, body) for take profit 1: part of the trade sold, the rest rides with a breakeven stop."""
+    gain = price / entry - 1 if entry else 0.0
+    body = (f"Sold {sold} @ ${price:.2f} (bought ${entry:.2f}), locked in {fmt_signed((price - entry) * sold * 100)}\n"
+            f"Holding {left}, stop moved to breakeven ${new_stop:.2f}")
+    return f"TRIM {contract_label(symbol)} {gain:+.0%}", body
+
+
+def trade_line(t: dict) -> str:
+    """One closed trade for the daily summary: 'NVDA 142P 11/27  -$101.00 (-26%)  stop hit'."""
+    pct = t["pnl"] / t["cost"] if t.get("cost") else 0.0
+    why = (t.get("reason") or t.get("kind") or "").split(" (")[0]
+    return f"{contract_label(t['symbol'])}: {fmt_signed(t['pnl'] or 0)} ({pct:+.0%})" + (f", {why}" if why else "")
+
 def reconcile(local: dict | None, held: dict) -> tuple:
     """Compare the bot's memory with what Alpaca actually holds. held: {option symbol: qty} for every
     option position in the account. Returns (action, symbol): ok | adopt (Alpaca has a position the
@@ -593,7 +691,7 @@ def near_miss(events: list, examples: int = 3) -> str:
     for k, n in sorted(counts.items(), key=lambda kv: -kv[1]):
         lines.append(f"- {n} skipped: {SKIP_LABELS.get(k, k)}")
     if skips:
-        lines.append("Examples: " + " | ".join(e["text"][:120] for e in skips[-examples:]))
+        lines.append("Examples:\n" + "\n".join("- " + _short(e["text"], 120) for e in skips[-examples:]))
     return "\n".join(lines)
 
 

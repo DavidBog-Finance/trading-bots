@@ -36,21 +36,23 @@ def _post(url, body: bytes, headers: dict):
         log.error("notify failed: %s", e)
 
 
-def notify(msg: str, title: str = "Trading bot", priority: str = "default"):
-    """Push to the ntfy iPhone app and/or a Discord/Slack webhook."""
+def notify(msg: str, title: str = "Trading bot", priority: str = "default", tags: str | None = None):
+    """Push to the ntfy iPhone app and/or a Discord/Slack webhook. tags: ntfy emoji short codes
+    (e.g. "green_circle"); paper alerts also get a small "paper" label."""
     log.info("NOTIFY %s: %s", title, msg)
     tag = "" if C.PAPER else "LIVE "
     if C.NTFY_TOPIC:
+        t = (tags or "chart_with_upwards_trend") + (",paper" if C.PAPER else "")
         _post(f"https://ntfy.sh/{C.NTFY_TOPIC}", msg.encode(),
-              {"Title": f"{tag}{title}", "Priority": priority, "Tags": "chart_with_upwards_trend"})
+              {"Title": f"{tag}{title}", "Priority": priority, "Tags": t})
     if C.ALERT_WEBHOOK_URL:
         body = json.dumps({"content": f"**{tag}{title}**\n{msg}", "text": f"{tag}{title}: {msg}"}).encode()
         _post(C.ALERT_WEBHOOK_URL, body, {"Content-Type": "application/json"})
 
 
-def alert(msg: str):
+def alert(msg: str, title: str = "Bot problem"):
     log.warning(msg)
-    notify(msg, "Bot problem", "high")
+    notify(msg, title, "high", "warning")
 
 
 # Trades are collected and pushed as ONE message when the run finishes,

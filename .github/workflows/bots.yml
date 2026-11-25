@@ -79,7 +79,7 @@ jobs:
       - name: Tell my phone if anything failed
         if: failure() && env.NTFY_TOPIC != ''
         run: |
-          curl -s -H "Title: Bot run FAILED" -H "Priority: high" -d "Open GitHub > Actions to see the log." "https://ntfy.sh/$NTFY_TOPIC"
+          curl -s -H "Title: Bot run failed" -H "Priority: high" -H "Tags: warning" -d "Open GitHub > Actions to see the log." "https://ntfy.sh/$NTFY_TOPIC"
 
   kick-options:              # backup starter for the options agent (see kick-options.yml)
     if: github.event_name == 'schedule'

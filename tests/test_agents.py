@@ -137,7 +137,7 @@ def test_agent_run_buys_through_gate_and_journals(monkeypatch):
 
     monkeypatch.setattr(CC, "create", fake_create)
     sent = []
-    monkeypatch.setattr(B, "notify", lambda msg, title="", priority="": sent.append((title, msg)))
+    monkeypatch.setattr(B, "notify", lambda msg, title="", priority="", tags=None: sent.append((title, msg)))
     out = A.run("stock", "test", fc)
     assert out == "Bought NVDA on strong earnings."
     assert len(fc.orders) == 1 and fc.orders[0].symbol == "NVDA" and fc.orders[0].notional == 400

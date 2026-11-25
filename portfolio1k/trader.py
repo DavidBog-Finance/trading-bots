@@ -187,8 +187,8 @@ def _market_sell(client, symbol: str, qty: int):
             o = _wait(client, o.id, 5)
         except Exception:
             pass
-        B.alert(f"[1k] Exit order for {symbol} was {_status(o)} after 30 s; it is cancelled and the trade is still "
-                f"managed (stop re-placed). Check Alpaca.")
+        B.alert(f"{R.contract_label(symbol)}: exit order was {_status(o)} after 30 s, so it was cancelled. The trade is "
+                f"still managed (stop re-placed). Check the Alpaca app.", "Needs attention")
     return int(float(o.filled_qty or 0)), float(o.filled_avg_price or 0)
 
 

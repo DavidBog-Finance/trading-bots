@@ -33,8 +33,7 @@ def occ_root(symbol: str) -> str:
     return symbol[:i]
 
 
-def fmt_money(x: float) -> str:
-    return f"-${-x:,.2f}" if x < 0 else f"${x:,.2f}"
+fmt_money = R.fmt_money
 
 
 class Runner:
@@ -75,14 +74,15 @@ class Runner:
                          "Set the NET_DEPOSITS_OVERRIDE variable to what you put in.")
         return v
 
-    def notify(self, msg: str, title: str, prio: str = "default"):
-        store.event(title, msg)
-        B.notify(msg, f"1k {title}", prio)
+    def notify(self, msg: str, kind: str, prio: str = "default", title: str | None = None, tags: str | None = None):
+        """kind is what the day's event log records (BUY, SELL, ...); title is what the phone shows."""
+        store.event(kind, msg)
+        B.notify(msg, title or kind, prio, tags)
 
     def problem(self, msg: str):
         self.st["problem_day"] = now_et().date().isoformat()
         store.event("problem", msg)
-        B.alert(f"[1k] {msg}")
+        B.alert(msg, "Needs attention")
 
     # ---------- rebuilding memory from Alpaca ----------
     def startup(self):
@@ -121,7 +121,8 @@ class Runner:
             old = local["qty"]
             local["qty"] = held[sym][0]
             self.set_position(local)
-            self.problem(f"Memory said {old} {sym}, Alpaca holds {local['qty']}. Using Alpaca's number.")
+            self.problem(f"{R.contract_label(sym)}: memory said {old} contracts, Alpaca holds {local['qty']}. "
+                         f"Using Alpaca's number.")
         elif action == "adopt":
             q, entry = held[sym]
             info = R.parse_occ(sym)
@@ -136,8 +137,9 @@ class Runner:
                                "stop": stop, "stop_id": trader.open_stop_for(self.client, sym), "tp1_done": False,
                                "high": entry, "level": None, "expiry": info["expiry"].isoformat(),
                                "cost": entry * q * 100, "realized": 0.0, "opened": opened})
-            self.notify(f"Memory was missing an open trade, so I took it back from Alpaca: {q} {sym} bought at "
-                        f"${entry:.2f}. Managing it with the normal rules (stop ${stop:.2f}).", "Recovered trade")
+            self.notify(f"{q} @ ${entry:.2f}, stop ${stop:.2f}\nThe bot's memory had lost this open trade, so it "
+                        f"took it back from Alpaca and manages it with the normal rules.", "Recovered trade",
+                        title=f"RECOVERED {R.contract_label(sym)}", tags="arrows_counterclockwise")
         # "gone" is handled by manage() on the first tick, using the real closing fill price
 
     def _rebuild_counts(self, now: datetime):
@@ -208,7 +210,7 @@ class Runner:
             cmd, problem = R.parse_command(msg.get("message") or "", S.CONTROL_PIN, age)
             if problem == "missing or wrong PIN":
                 B.log.warning("[1k] phone command '%s' ignored: missing or wrong PIN", cmd)
-                B.notify(f"Ignored '{cmd}': it needs your PIN, e.g. '{cmd} 1k <PIN>'.", "1k Command ignored", "default")
+                B.notify(f"'{cmd}' needs your PIN, e.g. '{cmd} 1k <PIN>'.", "Command ignored", "default", "no_entry")
             elif problem:
                 B.log.info("[1k] phone message ignored (%s)", problem)
             else:
@@ -217,26 +219,29 @@ class Runner:
     def handle(self, cmd: str):
         B.log.info("[1k] phone command: %s", cmd)
         if cmd == "status":
-            B.notify(self.status_text(), "1k Status", "low")
+            B.notify(self.status_text(), "Status", "low", "bar_chart")
         elif cmd == "pause":
             self.st["paused"] = True
-            self.notify("No new trades. The open trade (if any) is still managed. Send 'resume 1k'.", "Paused")
+            self.notify("No new trades. An open trade is still managed.\nSend 'resume 1k' to restart.", "Paused",
+                        tags="pause_button")
         elif cmd == "resume":
             self.st.update(paused=False, killed=False)
-            self.notify("Trading again.", "Resumed")
+            self.notify("Looking for trades again.", "Resumed", tags="arrow_forward")
         elif cmd == "close":
             if self.position():
                 self.exit(self.position(), R.Exit(self.position()["qty"], "you asked from your phone", "manual"))
             else:
-                B.notify("No open trade.", "1k", "low")
+                B.notify("There is no open trade to close.", "Close", "low", "information_source")
         elif cmd == "kill":
             self.kill("kill command from your phone")
         elif cmd in ("nofull", "full"):
             self.st["full_enabled"] = cmd == "full"
-            self.notify(f"Full-port trades {'ON' if cmd == 'full' else 'OFF'}.", "Setting")
+            self.notify(f"Full-port trades are {'ON' if cmd == 'full' else 'OFF'}.", "Setting", tags="gear")
         elif cmd == "help":
-            B.notify("status | help (no PIN needed)\npause | resume | close | kill | nofull | full"
-                     + (" (add your PIN, e.g. 'kill 1k 1234')" if S.CONTROL_PIN else ""), "1k Commands", "low")
+            B.notify("status 1k: account and open trade\nhelp 1k: this list\npause 1k / resume 1k: stop or restart new trades\n"
+                     "close 1k: sell the open trade now\nkill 1k: sell everything and stop\nfull 1k / nofull 1k: full-port on/off"
+                     + ("\nCommands that change anything need your PIN at the end, e.g. 'kill 1k 1234'." if S.CONTROL_PIN else ""),
+                     "Commands", "low", "information_source")
         self.save()
 
     def kill(self, why: str):
@@ -260,10 +265,11 @@ class Runner:
             except Exception as e:
                 B.log.warning("[1k] kill sweep failed: %s", e)
                 left["(could not check)"] = 0
-        msg = (f"{why}. Sold everything and stopped." if not left else
-               f"{why}. Trading stopped, but these could not be sold now (market closed or no bid): "
-               f"{', '.join(left)}. Check the Alpaca app.")
-        self.notify(msg + " Send 'resume 1k' to restart.", "KILLED", "high")
+        msg = (f"{why}.\nEverything is sold and trading is stopped." if not left else
+               f"{why}.\nTrading is stopped, but these could not be sold now (market closed or no bid): "
+               f"{', '.join(R.contract_label(s) for s in left)}. Check the Alpaca app.")
+        self.notify(msg + "\nSend 'resume 1k' to restart.", "KILLED", "high", title="KILLED: trading stopped",
+                    tags="rotating_light")
 
     # ---------- managing the open trade ----------
     def manage(self, now: datetime, next_day: date):
@@ -278,13 +284,13 @@ class Runner:
         held = self.held_qty(p["symbol"]) if not C.DRY_RUN else p["qty"]
         if held == 0 and not C.DRY_RUN:
             px = self.closing_fill(p) or p.get("last_mark", p["entry"])
-            self.problem(f"{p['symbol']} is no longer in the account but this program did not sell it. "
+            self.problem(f"{R.contract_label(p['symbol'])} is no longer in the account, but the bot did not sell it. "
                          f"Recording it closed at ${px:.2f}.")
             self.finish(p, px, p["qty"], R.Exit(p["qty"], "position gone", "unknown"))
             return
         if held != p["qty"]:   # a stop or exit filled in part, or a buy filled late: Alpaca's number wins
-            self.problem(f"Memory said {p['qty']} {p['symbol']}, Alpaca holds {held}. Using Alpaca's number "
-                         f"and re-placing the stop.")
+            self.problem(f"{R.contract_label(p['symbol'])}: memory said {p['qty']} contracts, Alpaca holds {held}. "
+                         f"Using Alpaca's number and re-placing the stop.")
             trader.cancel_open_sells(self.client, p["symbol"])
             p["qty"], p["stop_id"] = held, None
             self.set_position(p)
@@ -297,12 +303,13 @@ class Runner:
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             if not p["stop_id"] and not p.get("stop_alerted"):
                 p["stop_alerted"] = True
-                self.problem(f"No stop order is resting at Alpaca for {p['symbol']} and placing one failed. "
-                             f"This program still watches the -{R.stop_pct(p['tier']):.0%} stop every {S.LOOP_SEC:.0f} s "
+                self.problem(f"{R.contract_label(p['symbol'])}: no stop order is resting at Alpaca and placing one failed. "
+                             f"The bot still watches the -{R.stop_pct(p['tier']):.0%} stop every {S.LOOP_SEC:.0f} s "
                              f"while it runs, but nothing protects the trade if it stops. Check the Alpaca app.")
             elif p["stop_id"] and p.get("stop_alerted"):
                 p["stop_alerted"] = False
-                self.notify(f"Stop order for {p['symbol']} is resting at Alpaca again (${p['stop']:.2f}).", "Stop restored")
+                self.notify(f"Stop ${p['stop']:.2f} for {p['qty']} contracts is resting at Alpaca again.", "Stop restored",
+                            title=f"Stop restored {R.contract_label(p['symbol'])}", tags="shield")
             self.set_position(p)
         # 3) Price-based exits
         bid, ask, ts = data.option_quote(p["symbol"])
@@ -351,8 +358,8 @@ class Runner:
         if sold <= 0:   # nothing filled (halt, no bid, market closed): still holding, so protect it again
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             self.set_position(p)
-            self.problem(f"Tried to sell {p['symbol']} ({ex.reason}) but nothing filled. Still holding {p['qty']}; "
-                         f"stop re-placed at ${p['stop']:.2f}. Trying again on the next check.")
+            self.problem(f"{R.contract_label(p['symbol'])}: tried to sell ({ex.reason}) but nothing filled. Still holding "
+                         f"{p['qty']}, stop re-placed at ${p['stop']:.2f}. Trying again on the next check.")
             return
         fc = R.fill_cost("sell", bid or 0, ask or 0, px)
         if fc["slip"] is not None:
@@ -369,10 +376,10 @@ class Runner:
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             self.set_position(p)
             if ex.kind == "tp1":
-                self.notify(f"Sold {sold} {p['symbol']} at ${px:.2f} ({px / p['entry'] - 1:+.0%}): {ex.reason}. "
-                            f"Holding {p['qty']}, stop moved to breakeven ${p['entry']:.2f}.", "SELL (half)")
+                title, body = R.trim_alert(p["symbol"], sold, p["entry"], px, p["qty"], p["stop"])
+                self.notify(body, "SELL (half)", title=title, tags="moneybag")
             else:
-                self.problem(f"Sold only {sold} of {sold + p['qty']} {p['symbol']} ({ex.reason}). Holding "
+                self.problem(f"{R.contract_label(p['symbol'])}: sold only {sold} of {sold + p['qty']} ({ex.reason}). Holding "
                              f"{p['qty']} with the stop at ${p['stop']:.2f}; trying again on the next check.")
             return
         if ex.kind == "tp1":
@@ -405,10 +412,13 @@ class Runner:
         self.save()
         self.set_position(None)
         eq = float(self.account().equity) if not C.DRY_RUN else 0
-        self.notify(f"Closed {p['symbol']} x{qty} at ${px:.2f}: {ex.reason}.\nTrade P&L {fmt_money(pnl)} "
-                    f"({pnl / p['cost']:+.0%}). Account {fmt_money(eq)}."
-                    + (f"\nPaused until {self.st['pause_until']}: {self.st['pause_why']}." if self.st.get("pause_until", "") > now_et().date().isoformat() else ""),
-                    "SELL")
+        day0 = self.st.get("day_start_equity")
+        title, body, tags = R.sell_alert(p["symbol"], qty, p["entry"], px, pnl, p["cost"], ex.reason,
+                                         R.held_for(p.get("opened"), datetime.now(timezone.utc)), eq,
+                                         eq - day0 if eq and day0 else None)
+        if self.st.get("pause_until", "") > now_et().date().isoformat():
+            body += f"\nNo new trades until {self.st['pause_until']}: {self.st['pause_why']}."
+        self.notify(body, "SELL", title=title, tags=tags)
 
     # ---------- looking for a trade ----------
     def scan(self, now: datetime, acct, equity: float):
@@ -541,12 +551,11 @@ class Runner:
             st["full_count"] = (st.get("full_count", 0) if st.get("full_week") == wk else 0) + 1
             st["full_week"] = wk
         self.save()
-        self.notify(f"Bought {filled} {pick['symbol']} ({sig.direction}, {pick['expiry']}, strike {pick['strike']:g}) "
-                    f"at ${px:.2f} = {fmt_money(cost)}, {tier.upper()} size.\n"
-                    f"Setup: {sig.setup} - {sig.note}\nClaude {review['grade']}: {review['reason']}\n"
-                    f"Stop ${stop:.2f} (-{R.stop_pct(tier):.0%}) at Alpaca; take profit +{S.TP1:.0%} / +{S.TP2:.0%}."
-                    + (f"\nStandard size because: {tier_why}" if tier == "standard" and review["grade"] == "A+" else ""),
-                    "BUY")
+        title, body = R.buy_alert(pick["symbol"], filled, px, stop, R.stop_pct(tier), S.TP1, S.TP2,
+                                  "+".join([sig.setup, *sig.extra.get("also", [])]), sig.note, review["grade"],
+                                  review.get("win_prob"), review["reason"], tier,
+                                  tier_why if tier == "standard" and review["grade"] == "A+" else "")
+        self.notify(body, "BUY", title=title, tags="green_circle")
         return True
 
     # ---------- trades Claude said no to, followed on paper ----------
@@ -605,23 +614,29 @@ class Runner:
         acct = self.account()
         eq = float(acct.equity)
         dep = self.deposits()
-        lines = [f"Equity {fmt_money(eq)} (floor {fmt_money(dep * S.KILL_PCT)}), cash {fmt_money(float(acct.cash))}"]
+        st = self.st
+        lines = [f"Account {fmt_money(eq)}, cash {fmt_money(float(acct.cash))}"
+                 + (f", today {R.fmt_signed(eq - st['day_start_equity'])}" if st.get("day_start_equity") else ""),
+                 f"Kill floor {fmt_money(dep * S.KILL_PCT)} ({S.KILL_PCT:.0%} of {fmt_money(dep)} deposited)"]
         p = self.position()
         if p:
-            lines.append(f"Open: {p['qty']} {p['symbol']} from ${p['entry']:.2f}, last ${p.get('last_mark', p['entry']):.2f}, "
-                         f"stop ${p['stop']:.2f}, {p['tier']}")
-        st = self.st
-        lines.append(f"Trades today {st.get('trades_day', 0)}/{S.MAX_TRADES_DAY}, week {st.get('trades_week', 0)}/{S.MAX_TRADES_WEEK}")
+            last = p.get("last_mark", p["entry"])
+            lines.append(f"Open: {R.contract_label(p['symbol'])}, {p['qty']} @ ${p['entry']:.2f}, now ${last:.2f} "
+                         f"({last / p['entry'] - 1:+.0%}), stop ${p['stop']:.2f}")
+        else:
+            lines.append("Open: none")
+        lines.append(f"Trades: {st.get('trades_day', 0)} of {S.MAX_TRADES_DAY} today, "
+                     f"{st.get('trades_week', 0)} of {S.MAX_TRADES_WEEK} this week")
         flags = [k for k in ("killed", "paused") if st.get(k)]
         if st.get("pause_until", "") > now_et().date().isoformat():
-            flags.append(f"paused until {st['pause_until']}")
+            flags.append(f"no new trades until {st['pause_until']}")
         if not st.get("full_enabled", S.FULL_PORT_ENABLED):
             flags.append("full port off")
         if flags:
-            lines.append("Flags: " + ", ".join(flags))
+            lines.append("Note: " + ", ".join(flags))
         trades = store.closed_trades()
         card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
-        lines.append(scorecard_line(card))
+        lines += ["", scorecard_line(card)]
         lines += [x for x in (cost_line(trades), grade_lines(trades), luck_line(trades), claude_line(trades)) if x]
         return "\n".join(lines)
 
@@ -638,19 +653,22 @@ class Runner:
         day0 = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc).isoformat(timespec="seconds")
         near = R.near_miss(store.events_since(day0))
         if near:
-            B.notify(near, "1k Near misses today", "low")
+            B.notify(near, "Setups today", "low", "mag")
         if traded or self.st.get("trades_day") or self.st.get("problem_day") == today or now.weekday() == 4:
             title = "Weekly scorecard" if now.weekday() == 4 else "Daily summary"
-            card = R.scorecard(store.closed_trades(), S.REAL_COST_PER_CONTRACT)
+            trades = store.closed_trades()
+            card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
+            todays = [t for t in trades if t.get("closed") and
+                      datetime.fromisoformat(t["closed"]).astimezone(ET).date() == now.date()]
+            head = ("Closed today:\n" + "\n".join(R.trade_line(t) for t in todays) + "\n\n") if todays else ""
             extra = ""
             if now.weekday() == 4:
-                trades = store.closed_trades()
                 todo = R.go_live_ready(card, 0, R.expectancy_ci(trades, S.REAL_COST_PER_CONTRACT))
-                extra = "\nGo-live bars still open: " + (", ".join(todo) if todo else "none, all met")
+                extra = "\n\nGo-live bars still open: " + (", ".join(todo) if todo else "none, all met")
                 sh = shadow_lines(trades)
                 if sh:
                     extra += "\n" + sh
-            B.notify(self.status_text() + extra, f"1k {title}", "low")
+            B.notify(head + self.status_text() + extra, title, "low", "bar_chart")
 
     # ---------- main ----------
     def tick(self):
@@ -746,7 +764,8 @@ class Runner:
             last = store.get("last_error_alert") or 0
             if time.time() - last > 3600:
                 store.put("last_error_alert", time.time())
-                self.problem(f"Error (it keeps running; the stop at Alpaca still protects any trade): {type(e).__name__}: {str(e)[:200]}")
+                self.problem(f"Error: {type(e).__name__}: {str(e)[:200]}\nThe bot keeps running, and the stop at Alpaca "
+                             f"still protects any open trade.")
             return False
 
 
@@ -811,5 +830,5 @@ def scorecard_line(card: dict) -> str:
         return "No closed trades yet."
     pf = "inf" if card["profit_factor"] == float("inf") else f"{card['profit_factor']:.2f}"
     slip = f", stop slip {card['avg_stop_slip']:.0f} pts" if card["avg_stop_slip"] is not None else ""
-    return (f"{card['trades']} trades, win {card['win_rate']:.0%}, profit factor {pf}, net {fmt_money(card['net'])} "
+    return (f"Record: {card['trades']} trades, win {card['win_rate']:.0%}, profit factor {pf}, net {fmt_money(card['net'])} "
             f"after est. real costs (paper {fmt_money(card['paper_net'])}), max DD {card['max_drawdown']:.0%}{slip}")

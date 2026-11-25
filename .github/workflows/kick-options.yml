@@ -1,0 +1,40 @@
+# Backup starter for the options agent. GitHub's timer skipped every options-agent try on 11/23-11/25,
+# while the other workflows' timers still landed now and then (hours late). Each of them calls this:
+# if today's session still has time left and no options-agent run is going or waiting, start one.
+# The options agent then keeps itself going for the rest of the day (its "Hand off" step).
+name: kick-options
+
+on:
+  workflow_call:
+
+permissions:
+  actions: write            # to start the options-agent run
+  contents: read
+
+jobs:
+  kick:
+    if: vars.RUNNER != 'box'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_PAPER: ${{ vars.ALPACA_PAPER || 'true' }}
+      I_UNDERSTAND_LIVE_RISK: ${{ vars.I_UNDERSTAND_LIVE_RISK || 'no' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Start the options agent if it isn't running
+        run: |
+          busy=$(gh run list -R "$GITHUB_REPOSITORY" -w options-agent.yml -L 20 --json status \
+                 -q '[.[] | select(.status != "completed")] | length')
+          echo "options-agent runs going or waiting: $busy"
+          if [ "$busy" = "0" ] && python -m portfolio1k more-today; then
+            gh workflow run options-agent.yml -R "$GITHUB_REPOSITORY" --ref main -f action=run-now
+            echo "started a run"
+          fi

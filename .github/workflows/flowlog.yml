@@ -96,3 +96,11 @@ jobs:
         with:
           path: logs/flowlog.db
           key: flow-state-${{ github.run_id }}
+
+  kick-options:              # backup starter for the options agent (see kick-options.yml)
+    if: github.event_name == 'schedule'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/kick-options.yml
+    secrets: inherit

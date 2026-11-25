@@ -408,6 +408,17 @@ def sell_ladder(root: str, bid: float, ask: float, steps: int = 4) -> list:
 URGENT_EXITS = ("stop", "kill", "setup_stop", "expiry", "unknown", "manual")
 
 
+def more_session_today(now_et: datetime, is_open: bool, next_open_et: datetime | None,
+                       cutoff: str = "15:55") -> bool:
+    """Should a cloud run that just ended start another one? Yes while today's session still has
+    time left (it is open now, or opens later today) and it is before `cutoff` New York time.
+    GitHub's timer often skips runs, so each run hands off to the next instead of waiting for it."""
+    hh, mm = (int(x) for x in cutoff.split(":"))
+    if now_et.time() >= time(hh, mm):
+        return False
+    return is_open or (next_open_et is not None and next_open_et.date() == now_et.date())
+
+
 def exit_is_urgent(kind: str) -> bool:
     """Stops, kills, expiry closes and your phone 'close' sell at market right away; profit-taking,
     trailing and time exits first try the patient limit ladder."""

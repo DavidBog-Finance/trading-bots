@@ -22,8 +22,11 @@ name: options-agent
 
 on:
   schedule:
-    - cron: "17 13-20 * * 1-5"  # hourly at :17 (the top of the hour is GitHub's busiest), 13:17-20:17 UTC
-                                #   = covers 8:17-16:20 New York in summer and winter
+    # GitHub's timer is best-effort and skipped most of these on 11/23-11/24, so there are many tries,
+    # starting before the open (an early run waits for 9:30). Only one has to land: each run then
+    # starts the next one itself (see "Hand off" below) until the session is over.
+    - cron: "17,47 10-20 * * 1-5"   # every 30 min at :17/:47 (the top of the hour is GitHub's busiest)
+                                    #   10:17-20:47 UTC = 5:17 am-3:47 pm New York in winter
   workflow_dispatch:
     inputs:
       action:
@@ -35,6 +38,7 @@ on:
 
 permissions:
   contents: read            # this workflow only reads the code; it never writes to the repo
+  actions: write            # lets a run start the next run (hand-off); nothing else
 
 concurrency:
   group: options-agent      # one run at a time; a queued run starts when the current one ends
@@ -131,6 +135,17 @@ jobs:
             logs/portfolio1k.db
             logs/state.db
           key: p1k-state-${{ github.run_id }}
+
+      - name: Hand off to a new run while the session still has time
+        # A run lasts at most 330 min. Rather than hope GitHub's timer fires again, start the next run now;
+        # it waits in line (concurrency) and picks up the memory saved above.
+        if: success() && (github.event_name == 'schedule' || inputs.action == 'run-now')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python -m portfolio1k more-today; then
+            gh workflow run options-agent.yml --ref "${{ github.ref_name }}" -f action=run-now
+          fi
 
       - name: Tell my phone if anything failed
         if: failure() && env.NTFY_TOPIC != ''

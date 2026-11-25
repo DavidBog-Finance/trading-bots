@@ -330,8 +330,10 @@ def test_cli_json_disables_tools_and_handles_limits(monkeypatch, tmp_path):
 
     monkeypatch.setattr(CC.subprocess, "run", fake_run)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-leak")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-abc\ndef \n")   # pasted from a wrapped line
     assert CC.cli_json("news", "sys", "prompt", {"type": "object"}) == {"items": []}
     cmd, kw = calls[0]
+    assert kw["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-abcdef"
     assert cmd[cmd.index("--tools") + 1] == "" and "--json-schema" in cmd and kw["input"] == "prompt"
     assert "ANTHROPIC_API_KEY" not in kw["env"] and kw["cwd"].endswith("sb")
     with pytest.raises(CC.BudgetExceeded):

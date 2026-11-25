@@ -68,6 +68,11 @@ def allow(priority: str) -> bool:
     return used < C.CLAUDE_CALLS_PER_HOUR * PRIORITY_SHARE.get(priority, 0.5)
 
 
+def clean_token(tok: str) -> str:
+    """Drop spaces and line breaks picked up when the token was copied from a wrapped terminal line."""
+    return "".join(tok.split())
+
+
 def cli_json(purpose: str, system: str, prompt: str, schema: dict, timeout: int = 300) -> dict:
     """One `claude -p` call with no tools, returning JSON that matches `schema`."""
     why = available()
@@ -79,6 +84,9 @@ def cli_json(purpose: str, system: str, prompt: str, schema: dict, timeout: int 
     if C.CLAUDE_CODE_MODEL:
         cmd += ["--model", C.CLAUDE_CODE_MODEL]
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # make sure the plan is used
+    if env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        # `claude setup-token` wraps the token over two lines, so a copy-paste often keeps the line break.
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = clean_token(env["CLAUDE_CODE_OAUTH_TOKEN"])
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=SANDBOX, env=env, timeout=timeout)
     try:
         d = json.loads(r.stdout)

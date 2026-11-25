@@ -84,6 +84,9 @@ starts and pings `/fail` if the run fails, so healthchecks.io can warn you when 
 
 ## Keeping GitHub happy
 
-- Runs start at :17 past the hour, away from GitHub's busy top-of-the-hour slot.
+- Tries start at :17 and :47 past the hour from 5:17 am New York, away from GitHub's busy top-of-the-hour slot.
+  GitHub's timer skipped almost every try on 11/23-11/24, so only one try has to land: each run then starts the
+  next one itself (`python -m portfolio1k more-today`, then `gh workflow run`) until about 3:55 pm.
+- The Claude token is cleaned of spaces and line breaks before use (`claude setup-token` wraps it over two lines).
 - `keepalive.yml` re-enables the schedules once a month (GitHub turns them off after 60 quiet days in public repos).
 - Dependabot opens a pull request once a month if a GitHub Actions step is out of date; tests run on it, you merge.

@@ -1,4 +1,4 @@
-"""python -m portfolio1k run [--max-minutes N] | once | status | scorecard | kill"""
+"""python -m portfolio1k run [--max-minutes N] | once | status | scorecard | kill | more-today"""
 import argparse
 import os
 import sys
@@ -11,7 +11,7 @@ from portfolio1k import rules as R, runner, settings as S, store  # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser(prog="portfolio1k")
-    ap.add_argument("cmd", choices=["run", "once", "status", "scorecard", "kill"])
+    ap.add_argument("cmd", choices=["run", "once", "status", "scorecard", "kill", "more-today"])
     ap.add_argument("--max-minutes", type=float, default=None,
                     help="exit after this many minutes or at 16:20 New York (GitHub Actions); omit to run forever")
     a = ap.parse_args()
@@ -25,6 +25,13 @@ def main():
         todo = R.go_live_ready(card, 0)
         print("Go-live bars still open:", ", ".join(todo) if todo else "none, all met")
         return
+    if a.cmd == "more-today":
+        # exit code 0 = today's session still has time left, so the cloud run should hand off to a new one
+        from portfolio1k.runner import ET, now_et
+        clock = B.trading_client().get_clock()
+        more = R.more_session_today(now_et(), clock.is_open, clock.next_open.astimezone(ET))
+        print("more session today:", "yes" if more else "no")
+        sys.exit(0 if more else 1)
     r = runner.Runner()
     if a.cmd == "run":
         r.run(a.max_minutes)

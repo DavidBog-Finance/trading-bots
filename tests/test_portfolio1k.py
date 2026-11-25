@@ -563,3 +563,13 @@ def test_near_miss_logged_in_the_loop(world, monkeypatch):
     assert "setup" in kinds and "skip:claude" in kinds
     txt = R.near_miss(store.events_since("2000-01-01"))
     assert "Claude said no" in txt
+
+
+def test_more_session_today_hands_off_only_while_the_session_has_time():
+    from datetime import datetime
+    d = datetime(2026, 11, 25, 9, 0)
+    assert R.more_session_today(d, False, datetime(2026, 11, 25, 9, 30))          # opens later today
+    assert not R.more_session_today(d, False, datetime(2026, 11, 26, 9, 30))      # holiday / weekend
+    assert R.more_session_today(datetime(2026, 11, 25, 12, 0), True, None)        # open now
+    assert not R.more_session_today(datetime(2026, 11, 25, 15, 56), True, None)   # too close to the close
+    assert not R.more_session_today(datetime(2026, 11, 25, 17, 0), False, datetime(2026, 11, 27, 9, 30))

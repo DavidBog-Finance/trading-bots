@@ -277,7 +277,8 @@ class Runner:
         self.set_position(p)
         under = self.bars.get(p["root"])
         last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
-        ex = R.exit_decision({**p, "expiry": date.fromisoformat(p["expiry"])}, mark, now, last_close, next_day)
+        ex = R.exit_decision({**p, "expiry": date.fromisoformat(p["expiry"])}, mark, now, last_close, next_day,
+                             getattr(self, "close_today", None))
         if ex and (fresh or ex.kind in ("time", "expiry", "setup_stop")):
             self.exit(p, ex, bid, ask)
 
@@ -354,7 +355,8 @@ class Runner:
     # ---------- looking for a trade ----------
     def scan(self, now: datetime, acct, equity: float):
         st = self.st
-        why = R.entry_block(st, now, equity, self.deposits(), bool(self.position()), S.FOMC_DAYS)
+        why = R.entry_block(st, now, equity, self.deposits(), bool(self.position()), S.FOMC_DAYS,
+                            getattr(self, "close_today", None))
         if why:
             return why
         prep = store.get("prep") or {}
@@ -546,6 +548,10 @@ class Runner:
             self.daily = data.daily_closes(S.WATCHLIST)
         next_day = clock.next_open.astimezone(ET).date() if clock.next_open.astimezone(ET).date() > now.date() \
             else R.add_trading_days(now.date(), 1)
+        try:
+            self.close_today = clock.next_close.astimezone(ET).time()   # 13:00 on half days
+        except Exception:
+            self.close_today = None
         self.manage(now, next_day)
         self.news(now)
         why = self.scan(now, acct, equity)

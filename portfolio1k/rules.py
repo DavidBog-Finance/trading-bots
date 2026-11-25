@@ -21,6 +21,14 @@ def between(now: datetime, start: str, end: str) -> bool:
     return hm(start) <= now.time() < hm(end)
 
 
+def close_adjusted(now: datetime, close: time | None) -> datetime:
+    """The clock the end-of-day rules read. On a half day (close 13:00) it runs 3 h ahead, so the
+    14:30 entry cutoff, 15:00/15:30 expiry closes and 15:45 time stop land at 11:30/12:00/12:30/12:45."""
+    if close is None or close >= time(16, 0):
+        return now
+    return now + (datetime.combine(now.date(), time(16, 0)) - datetime.combine(now.date(), close))
+
+
 # ---------- indicators ----------
 
 def vwap(df: pd.DataFrame) -> pd.Series:
@@ -255,8 +263,9 @@ def iso_week(d: date) -> str:
 
 
 def entry_block(st: dict, now: datetime, equity: float, deposits: float, has_position: bool,
-                fomc_days: set) -> str | None:
-    """Why no new trade may open right now (None = allowed). `now` is New York time."""
+                fomc_days: set, close: time | None = None) -> str | None:
+    """Why no new trade may open right now (None = allowed). `now` is New York time,
+    `close` today's market close (earlier on half days)."""
     today = now.date().isoformat()
     if st.get("killed"):
         return "killed (send 'resume 1k' to restart)"
@@ -266,7 +275,7 @@ def entry_block(st: dict, now: datetime, equity: float, deposits: float, has_pos
         return "paused from phone"
     if has_position:
         return "one position at a time"
-    if not between(now, S.NEWS_START, S.ENTRY_END):
+    if not (hm(S.NEWS_START) <= now.time() and close_adjusted(now, close).time() < hm(S.ENTRY_END)):
         return "outside entry hours"
     if today in fomc_days and between(now, "13:30", "14:30"):
         return "Fed decision window"
@@ -317,7 +326,8 @@ class Exit:
     kind: str               # stop | setup_stop | tp1 | tp2 | trail | time | expiry
 
 
-def exit_decision(p: dict, mark: float, now: datetime, last_close: float | None, next_trading_day: date) -> Exit | None:
+def exit_decision(p: dict, mark: float, now: datetime, last_close: float | None, next_trading_day: date,
+                  close: time | None = None) -> Exit | None:
     """What to sell now, if anything. p: entry, qty, tier, direction, level, expiry (date), tp1_done,
     high, stop (current stop price). `last_close` = underlying's last closed 5-min bar."""
     entry, qty = p["entry"], p["qty"]
@@ -327,11 +337,12 @@ def exit_decision(p: dict, mark: float, now: datetime, last_close: float | None,
     if last_close is not None and p.get("level"):
         if (p["direction"] == "call" and last_close < p["level"]) or (p["direction"] == "put" and last_close > p["level"]):
             return Exit(qty, f"setup failed: underlying closed {last_close:.2f} back through {p['level']:.2f}", "setup_stop")
-    if p["expiry"] <= now.date() and now.time() >= hm(S.EXPIRY_DAY_CLOSE):
-        return Exit(qty, "expires today (Alpaca force-sells expiring options from about 3:30 pm)", "expiry")
-    if p["expiry"] <= next_trading_day and now.time() >= hm(S.EXPIRY_CLOSE):
+    late = close_adjusted(now, close).time()   # end-of-day rules move earlier on half days
+    if p["expiry"] <= now.date() and late >= hm(S.EXPIRY_DAY_CLOSE):
+        return Exit(qty, "expires today (Alpaca force-sells expiring options before the close)", "expiry")
+    if p["expiry"] <= next_trading_day and late >= hm(S.EXPIRY_CLOSE):
         return Exit(qty, "expires next trading day", "expiry")
-    if now.time() >= hm(S.TIME_STOP):
+    if late >= hm(S.TIME_STOP):
         dte = (p["expiry"] - now.date()).days
         if p["tier"] == "full" or not (gain >= S.HOLD_OVERNIGHT_GAIN and dte >= S.HOLD_OVERNIGHT_DTE):
             return Exit(qty, f"time stop ({gain:+.0%})", "time")

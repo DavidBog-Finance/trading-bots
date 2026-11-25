@@ -231,7 +231,7 @@ class Fake:
     def get_clock(self):
         now = datetime.now(timezone.utc)
         return types.SimpleNamespace(is_open=self.is_open, next_open=now + timedelta(days=1), timestamp=now,
-                                     next_close=now + timedelta(hours=3))
+                                     next_close=datetime.now(runner.ET).replace(hour=16, minute=0))  # a regular day
 
     def get_open_position(self, sym):
         if sym not in self.positions:
@@ -573,3 +573,20 @@ def test_more_session_today_hands_off_only_while_the_session_has_time():
     assert R.more_session_today(datetime(2026, 11, 25, 12, 0), True, None)        # open now
     assert not R.more_session_today(datetime(2026, 11, 25, 15, 56), True, None)   # too close to the close
     assert not R.more_session_today(datetime(2026, 11, 25, 17, 0), False, datetime(2026, 11, 27, 9, 30))
+
+
+def test_half_day_moves_end_of_day_rules_earlier():
+    from datetime import date, datetime, time
+    fri = datetime(2026, 11, 27, 12, 5)                         # day after Thanksgiving closes at 13:00
+    p = {"entry": 2.0, "qty": 2, "tier": "standard", "direction": "call", "level": None,
+         "expiry": date(2026, 11, 27), "tp1_done": False, "high": 2.0, "stop": 1.4}
+    ex = R.exit_decision(p, 2.1, fri, None, date(2026, 11, 30), time(13, 0))
+    assert ex and ex.kind == "expiry"                            # sold by noon, not 3 pm (after the close)
+    assert R.exit_decision(p, 2.1, fri, None, date(2026, 11, 30)) is None   # a normal day would still hold
+    later = {**p, "expiry": date(2026, 12, 4)}
+    ex = R.exit_decision(later, 2.1, datetime(2026, 11, 27, 12, 50), None, date(2026, 11, 30), time(13, 0))
+    assert ex and ex.kind == "time"                              # 15:45 time stop lands at 12:45
+    st = {"day": "2026-11-27"}
+    assert R.entry_block(st, datetime(2026, 11, 27, 11, 40), 1000, 1000, False, set(), time(13, 0)) == "outside entry hours"
+    assert R.entry_block(st, datetime(2026, 11, 27, 10, 30), 1000, 1000, False, set(), time(13, 0)) != "outside entry hours"
+    assert R.close_adjusted(fri, time(16, 0)) == fri and R.close_adjusted(fri, None) == fri

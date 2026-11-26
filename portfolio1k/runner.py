@@ -202,10 +202,12 @@ class Runner:
             B.log.warning("[1k] command poll failed: %s", e)
             return
         for line in lines:
-            msg = json.loads(line)
-            if msg.get("event") != "message":
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue   # one garbled line never blocks the others
+            if msg.get("event") != "message" or not msg.get("id"):
                 continue
-            store.put("cmd_since", msg["id"])
             age = time.time() - float(msg.get("time") or time.time())
             cmd, problem = R.parse_command(msg.get("message") or "", S.CONTROL_PIN, age)
             if problem == "missing or wrong PIN":
@@ -214,7 +216,20 @@ class Runner:
             elif problem:
                 B.log.info("[1k] phone message ignored (%s)", problem)
             else:
-                self.handle(cmd)
+                try:
+                    self.handle(cmd)
+                except Exception as e:
+                    # Not marked done, so the next poll tries it again (3 tries, then give up and say so)
+                    tries = self.st.get("cmd_tries", {})
+                    tries[msg["id"]] = tries.get(msg["id"], 0) + 1
+                    self.st["cmd_tries"] = {k: v for k, v in tries.items() if k == msg["id"]}
+                    if tries[msg["id"]] < 3:
+                        B.log.warning("[1k] phone command '%s' failed (%s); retrying", cmd, e)
+                        self.save()
+                        return
+                    self.problem(f"Your '{cmd}' command failed 3 times ({type(e).__name__}: {str(e)[:120]}). "
+                                 f"Check the Alpaca app.")
+            store.put("cmd_since", msg["id"])
 
     def handle(self, cmd: str):
         B.log.info("[1k] phone command: %s", cmd)
@@ -315,10 +330,17 @@ class Runner:
         bid, ask, ts = data.option_quote(p["symbol"])
         fresh = ts is not None and (datetime.now(timezone.utc) - ts).total_seconds() <= S.QUOTE_MAX_AGE_SEC
         if bid <= 0 or ask <= 0:
+            # No usable quote: price exits can't be judged, but end-of-day and expiry exits must still happen
+            ex = R.exit_decision({**p, "expiry": date.fromisoformat(p["expiry"]), "stop": 0.0, "level": None,
+                                  "tp1_done": False}, p.get("last_mark", p["entry"]), now, None, next_day,
+                                 getattr(self, "close_today", None))
+            if ex and ex.kind in ("time", "expiry"):
+                self.exit(p, ex, max(bid, 0.0), max(ask, 0.0))
             return
         mark = (bid + ask) / 2
         p["last_mark"] = mark
         p["high"] = max(p.get("high", p["entry"]), mark)
+        p["low"] = min(p.get("low", p["entry"]), mark)
         self.set_position(p)
         under = self.bars.get(p["root"])
         last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
@@ -354,7 +376,8 @@ class Runner:
             self.finish(p, px, q, R.Exit(q, "stop filled at Alpaca", "stop"))
             return
         qty = min(ex.qty, p["qty"])
-        sold, px = trader.sell(self.client, p["symbol"], qty, bid, ask or 0.0, urgent=R.exit_is_urgent(ex.kind))
+        sold, px = trader.sell(self.client, p["symbol"], qty, bid, ask or 0.0, urgent=R.exit_is_urgent(ex.kind),
+                               steps=R.ladder_steps(ex.kind))
         if sold <= 0:   # nothing filled (halt, no bid, market closed): still holding, so protect it again
             p["stop_id"] = trader.place_stop(self.client, p["symbol"], occ_root(p["symbol"]), p["qty"], p["stop"])
             self.set_position(p)
@@ -384,6 +407,13 @@ class Runner:
             return
         if ex.kind == "tp1":
             p["tp1_done"] = True
+            if p.get("realized", 0.0) == 0.0:   # the whole trade went at TP1 (one contract): test letting it run
+                try:
+                    runners = store.get("runners") or []
+                    runners.append(R.runner_ghost(p, (bid + ask) / 2 if bid and ask else px, px))
+                    store.put("runners", runners)
+                except Exception as e:
+                    B.log.info("[1k] could not start the paper runner: %s", e)
         self.finish(p, px, sold, ex)
 
     def closing_fill(self, p: dict) -> float | None:
@@ -407,7 +437,9 @@ class Runner:
                           exit_bid=p.get("exit_bid"), exit_ask=p.get("exit_ask"),
                           exit_slip=round(p["exit_slip_q"] / eq_n, 4) if eq_n else None,
                           exit_slip_pct=round(p["exit_slip_pct_q"] / eq_n, 4) if eq_n else None,
-                          fees=round(S.FEE_PER_CONTRACT_SIDE * 2 * p.get("qty_open", qty), 2))
+                          fees=round(S.FEE_PER_CONTRACT_SIDE * 2 * p.get("qty_open", qty), 2),
+                          mfe=round(max(p.get("high", p["entry"]), px) / p["entry"] - 1, 4) if p["entry"] else None,
+                          mae=round(min(p.get("low", p["entry"]), px) / p["entry"] - 1, 4) if p["entry"] else None)
         self.st = R.after_close(self.st, result, now_et().date())
         self.save()
         self.set_position(None)
@@ -523,6 +555,11 @@ class Runner:
         except Exception as e:
             B.log.info("[1k] shadow filters failed: %s", e)
             shadow = {}
+        try:
+            context = R.trade_context(sig, now, df, self.daily.get(sig.symbol, []), self.bars.get("SPY"))
+        except Exception as e:
+            B.log.info("[1k] trade context failed: %s", e)
+            context = {}
         filled, px = trader.buy(self.client, pick["symbol"], sig.symbol, qty, pick["bid"], pick["ask"])
         if not filled:
             store.event("skip:fill", f"{pick['symbol']} not filled within 60 s")
@@ -538,10 +575,10 @@ class Runner:
                                equity_before=equity, claude=json.dumps(review), feed=S.OPTION_FEED,
                                entry_bid=pick["bid"], entry_ask=pick["ask"], entry_slip=fc["slip"],
                                entry_slip_pct=fc["slip_pct"], entry_spread_pct=fc["spread_pct"],
-                               shadow=json.dumps(shadow))
+                               shadow=json.dumps(shadow), context=json.dumps(context))
         self.set_position({"trade_id": tid, "symbol": pick["symbol"], "root": sig.symbol, "direction": sig.direction,
                            "setup": sig.setup, "tier": tier, "qty": filled, "qty_open": filled, "entry": px, "stop": stop,
-                           "stop_id": stop_id, "tp1_done": False, "high": px, "level": sig.level,
+                           "stop_id": stop_id, "tp1_done": False, "high": px, "low": px, "level": sig.level,
                            "expiry": pick["expiry"].isoformat(), "cost": cost, "realized": 0.0, "opened": opened})
         st = self.st
         st["trades_day"] = st.get("trades_day", 0) + 1
@@ -573,27 +610,36 @@ class Runner:
         store.put("ghosts", ghosts[-10:])
 
     def track_ghosts(self, now: datetime, next_day: date):
-        ghosts = store.get("ghosts") or []
-        if not ghosts or time.time() - getattr(self, "_ghost_t", 0) < 60:
+        """Follow on paper (once a minute): trades Claude rejected, and one-contract winners as if they
+        had kept running."""
+        if time.time() - getattr(self, "_ghost_t", 0) < 60:
             return
         self._ghost_t = time.time()
-        keep, done = [], store.get("ghost_results") or []
-        for g in ghosts:
-            bid, ask, _ = data.option_quote(g["symbol"])
-            if bid <= 0 or ask <= 0:
-                keep.append(g)
+        for key, out_key in (("ghosts", "ghost_results"), ("runners", "runner_results")):
+            items = store.get(key) or []
+            if not items:
                 continue
-            under = self.bars.get(g["root"])
-            last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
-            g, result = R.ghost_step(g, (bid + ask) / 2, now, last_close, next_day, getattr(self, "close_today", None))
-            if result is None:
-                keep.append(g)
-            else:
-                done.append({"opened": g["opened"], "symbol": g["symbol"], "grade": g.get("grade"),
-                             "win_prob": g.get("win_prob"), "result": round(result, 4)})
-                store.event("ghost", f"{g['symbol']} (Claude said no): {result:+.0%} on paper")
-        store.put("ghosts", keep)
-        store.put("ghost_results", done[-500:])
+            keep, done = [], store.get(out_key) or []
+            for g in items:
+                bid, ask, _ = data.option_quote(g["symbol"])
+                if bid <= 0 or ask <= 0:
+                    keep.append(g)
+                    continue
+                under = self.bars.get(g["root"])
+                last_close = float(under["close"].iloc[-1]) if under is not None and len(under) else None
+                g, result = R.ghost_step(g, (bid + ask) / 2, now, last_close, next_day, getattr(self, "close_today", None))
+                if result is None:
+                    keep.append(g)
+                elif key == "ghosts":
+                    done.append({"opened": g["opened"], "symbol": g["symbol"], "grade": g.get("grade"),
+                                 "win_prob": g.get("win_prob"), "result": round(result, 4)})
+                    store.event("ghost", f"{g['symbol']} (Claude said no): {result:+.0%} on paper")
+                else:
+                    done.append({"opened": g.get("opened"), "symbol": g["symbol"], "trade_id": g.get("trade_id"),
+                                 "actual": g["actual"], "result": round(result, 4)})
+                    store.event("runner", f"{g['symbol']}: sold at {g['actual']:+.0%}, running would have made {result:+.0%}")
+            store.put(key, keep)
+            store.put(out_key, done[-500:])
 
     # ---------- news ----------
     def news(self, now: datetime):
@@ -665,9 +711,9 @@ class Runner:
             if now.weekday() == 4:
                 todo = R.go_live_ready(card, 0, R.expectancy_ci(trades, S.REAL_COST_PER_CONTRACT))
                 extra = "\n\nGo-live bars still open: " + (", ".join(todo) if todo else "none, all met")
-                sh = shadow_lines(trades)
-                if sh:
-                    extra += "\n" + sh
+                for line in (shadow_lines(trades), research_lines(trades)):
+                    if line:
+                        extra += "\n" + line
             B.notify(head + self.status_text() + extra, title, "low", "bar_chart")
 
     # ---------- main ----------
@@ -823,6 +869,16 @@ def claude_line(trades: list) -> str:
 def shadow_lines(trades: list) -> str:
     rows = R.shadow_report(trades, S.REAL_COST_PER_CONTRACT)
     return ("Filter tests (logged only, not used yet):\n" + "\n".join(rows)) if rows else ""
+
+
+def research_lines(trades: list) -> str:
+    """Friday-only lines from the quiet strategy tests: one-contract runners, best/worst points, and
+    results by market condition."""
+    out = [R.runner_report(store.get("runner_results") or []), R.excursion_report(trades)]
+    ctx = R.context_report(trades, S.REAL_COST_PER_CONTRACT)
+    if ctx:
+        out.append("By market condition:\n" + "\n".join(ctx))
+    return "\n".join(x for x in out if x)
 
 
 def scorecard_line(card: dict) -> str:

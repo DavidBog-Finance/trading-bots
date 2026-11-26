@@ -70,6 +70,19 @@ LOOP_SEC = _f("LOOP_SEC", 15)
 FOMC_DAYS = set(_l("FOMC_DAYS", "2026-12-09,2027-01-27,2027-03-17,2027-04-28,2027-06-09,2027-07-28,"
                                 "2027-09-15,2027-10-27,2027-11-17"))
 
+# CPI and jobs-report days (08:30 ET releases), from the BLS schedule as of Nov 2026. Logged as a shadow
+# test only ("macro_day"): the bot still trades them. Override with P1K_MACRO_DAYS=... if BLS moves one.
+MACRO_DAYS = set(_l("MACRO_DAYS",
+                    "2026-12-10,2027-01-13,2027-02-11,2027-03-10,2027-04-13,2027-05-12,2027-06-10,2027-07-14,"
+                    "2027-08-11,2027-09-14,2027-10-14,2027-11-10,2027-12-10,"           # CPI
+                    "2026-12-04,2027-01-08,2027-02-05,2027-03-05,2027-04-02,2027-05-07,2027-06-04,2027-07-02,"
+                    "2027-08-06,2027-09-03,2027-10-08,2027-11-05,2027-12-03"))          # jobs report
+
+# NYSE full-day closures, so "pause 2 trading days" skips holidays too.
+MARKET_HOLIDAYS = set(_l("MARKET_HOLIDAYS",
+                         "2026-11-26,2026-12-25,2027-01-01,2027-01-18,2027-02-15,2027-03-26,2027-05-31,"
+                         "2027-06-18,2027-07-05,2027-09-06,2027-11-25,2027-12-24"))
+
 USE_CLAUDE = _b("USE_CLAUDE", True)
 
 # Option quotes: "indicative" is Alpaca's free feed (delayed trades, slightly altered quotes); "opra" needs

@@ -20,7 +20,7 @@ def main():
         card = R.scorecard(trades, S.REAL_COST_PER_CONTRACT)
         print(runner.scorecard_line(card))
         for line in (runner.cost_line(trades), runner.grade_lines(trades), runner.luck_line(trades),
-                     runner.claude_line(trades), runner.shadow_lines(trades)):
+                     runner.claude_line(trades), runner.shadow_lines(trades), runner.research_lines(trades)):
             if line:
                 print(line)
         todo = R.go_live_ready(card, 0, R.expectancy_ci(trades, S.REAL_COST_PER_CONTRACT))

@@ -42,7 +42,9 @@ estimates and live fills will be somewhat worse. Stock bars come from IEX. In Gi
 
 - Buys: a limit at the mid, raised one tick every 10 s up to 2% over the mid, cancelled after 60 s.
 - Profit-taking, trailing and time exits: a limit at the mid stepped down to the bid in ~5 s steps,
-  then market for anything left. Stops, kills, expiry closes and your phone `close` sell at market at once.
+  then market for anything left. "Setup failed" and expiry exits use a short version (about 15 s).
+  Stops, kills and your phone `close` sell at market at once. With no quote at all, time and expiry exits
+  still sell (at market).
 - A stop for the full quantity must be resting at Alpaca at every check (every 15 s). If one is missing it is
   placed again; if that fails you get one alert per trade.
 - Anything expiring today is sold by 3:00 pm New York (Alpaca force-sells expiring options from ~3:30 pm);
@@ -114,7 +116,8 @@ starts and pings `/fail` if the run fails, so healthchecks.io can warn you when 
 ## Learning what works (added 2026-11-25)
 
 - **Filter tests (logged only):** every trade stores whether four research-backed filters would have
-  blocked it (`rules.SHADOW_FILTERS`: lunch window, strict puts, volatility gate, news as a veto only).
+  blocked it (`rules.SHADOW_FILTERS`: lunch window, strict puts, volatility gate, news as a veto only,
+  CPI/jobs-report days from `P1K_MACRO_DAYS`).
   The Friday scorecard shows how the trades each filter would have skipped actually did. Nothing changes
   until a filter passes an out-of-sample backtest (repo rule).
 - **Claude as a forecaster:** each review now includes `win_prob`. The status shows its Brier score against
@@ -125,4 +128,10 @@ starts and pings `/fail` if the run fails, so healthchecks.io can warn you when 
   $0, the results so far can't be told from luck. It is also a go-live bar; see `GO_LIVE.md`.
 - **Pinned versions:** GitHub installs `requirements-lock.txt` and a fixed Claude Code version, so an
   upstream release can't break trading mid-week. `requirements.txt` keeps ranges for your own computer.
-
+- **One-contract winners:** with 1 contract, take profit 1 sells everything at +40%, so +80% and the
+  trailing stop never apply. Each such trade is followed on paper as if it had kept running (stop at
+  breakeven, +80% target, 20% trail, same end-of-day rules). The Friday scorecard compares the two.
+- **Market conditions and best/worst point:** each trade stores time of day, gap, the day's range versus
+  normal, and whether it went with SPY's move (`trades.context`), plus its best and worst price versus
+  entry (`mfe`, `mae`). From 10 trades the Friday scorecard breaks results down by condition.
+- **Holidays:** "pause 2 trading days" skips NYSE holidays (`P1K_MARKET_HOLIDAYS`).

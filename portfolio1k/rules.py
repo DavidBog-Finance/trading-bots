@@ -300,10 +300,12 @@ def entry_block(st: dict, now: datetime, equity: float, deposits: float, has_pos
     return None
 
 
-def add_trading_days(d: date, n: int) -> date:
+def add_trading_days(d: date, n: int, holidays=None) -> date:
+    """n market days after d, skipping weekends and NYSE holidays (settings.MARKET_HOLIDAYS)."""
+    hol = S.MARKET_HOLIDAYS if holidays is None else holidays
     while n > 0:
         d += timedelta(days=1)
-        if d.weekday() < 5:
+        if d.weekday() < 5 and d.isoformat() not in hol:
             n -= 1
     return d
 
@@ -425,7 +427,8 @@ def sell_ladder(root: str, bid: float, ask: float, steps: int = 4) -> list:
     return out
 
 
-URGENT_EXITS = ("stop", "kill", "setup_stop", "expiry", "unknown", "manual")
+URGENT_EXITS = ("stop", "kill", "unknown", "manual")
+QUICK_EXITS = ("setup_stop", "expiry")   # a short limit ladder first (about 15 s), then market
 
 
 def more_session_today(now_et: datetime, is_open: bool, next_open_et: datetime | None,
@@ -440,9 +443,18 @@ def more_session_today(now_et: datetime, is_open: bool, next_open_et: datetime |
 
 
 def exit_is_urgent(kind: str) -> bool:
-    """Stops, kills, expiry closes and your phone 'close' sell at market right away; profit-taking,
-    trailing and time exits first try the patient limit ladder."""
+    """Stops, kills and your phone 'close' sell at market right away. Everything else tries a limit
+    ladder first (see ladder_steps), then sells any remainder at market."""
     return kind in URGENT_EXITS
+
+
+def ladder_steps(kind: str) -> int:
+    """How many price steps the sell ladder takes from the mid down to the bid (about 5 s each).
+    0 = market at once. 'Setup failed' and expiry exits get a short ladder: they should not wait long,
+    but a market order on a thin 2-7 day option gives away much of the spread."""
+    if exit_is_urgent(kind):
+        return 0
+    return 2 if kind in QUICK_EXITS else 4
 
 
 # ---------- cost log ----------
@@ -664,7 +676,8 @@ def bot_buys_since(orders: list, since_iso: str) -> int:
     for o in orders:
         cid = o.get("client_order_id") or ""
         if cid.startswith("p1k-") and not cid.startswith(("p1k-stop", "p1k-exit")) and o.get("side") == "buy" \
-                and o.get("status") == "filled" and (o.get("filled_at") or "") >= since_iso:
+                and (o.get("status") == "filled" or (o.get("qty") or 0) > 0) \
+                and (o.get("filled_at") or "") >= since_iso:
             n += 1
     return n
 
@@ -702,6 +715,7 @@ SHADOW_FILTERS = {
     "strict_puts": "puts only when SPY is down 0.3%+ on the day and below its VWAP",
     "vol_gate": "only when today's range is at least 3/4 of the stock's typical daily move",
     "news_veto": "Claude's news score may only block trades, not start them",
+    "macro_day": "no new entries on CPI or jobs-report days (like Fed days)",
 }
 
 
@@ -718,6 +732,7 @@ def shadow_filters(sig, now: datetime, df: pd.DataFrame, daily_closes, spy: pd.D
     rng = (float(df["high"].max()) - float(df["low"].min())) / float(df["open"].iloc[0]) if len(df) else 0.0
     out["vol_gate"] = bool(moves) and rng < 0.75 * (sum(moves) / len(moves))
     out["news_veto"] = sig.setup == "news" and not sig.extra.get("also")
+    out["macro_day"] = now.date().isoformat() in S.MACRO_DAYS
     return out
 
 
@@ -801,3 +816,109 @@ def expectancy_ci(trades: list, cost_per_contract: float = 0.0, n_boot: int = 40
     verdict = ("probably a real edge so far" if lo > 0 else "losing, more than luck explains" if hi < 0
                else "can't tell from luck yet")
     return {"n": len(pnl), "mean": sum(pnl) / len(pnl), "lo": lo, "hi": hi, "verdict": verdict}
+
+
+# ---------- "let one-contract winners run", tested on paper ----------
+
+def runner_ghost(p: dict, mark: float, sold_at: float) -> dict:
+    """A 1-contract trade just sold everything at take profit 1. Follow the same contract on paper as if
+    it had kept running: stop at breakeven, take profit 2 or the trailing stop, same end-of-day rules
+    (exactly what the second half of a 2-lot trade does). sold_at: the real sale price."""
+    return {"symbol": p["symbol"], "root": p["root"], "direction": p["direction"], "tier": p.get("tier", "standard"),
+            "setup": p.get("setup"), "qty": 1, "qty0": 1, "entry": p["entry"], "stop": p["entry"], "tp1_done": True,
+            "high": max(mark, sold_at), "level": p.get("level"), "expiry": p["expiry"], "opened": p.get("opened"),
+            "trade_id": p.get("trade_id"), "actual": round(sold_at / p["entry"] - 1, 4) if p["entry"] else 0.0}
+
+
+def runner_report(results: list) -> str:
+    """Friday line: one-contract winners sold at +40% versus letting them run. results: dicts with
+    actual and result (fractions of the premium)."""
+    if not results:
+        return ""
+    n = len(results)
+    act = sum(r["actual"] for r in results) / n
+    run = sum(r["result"] for r in results) / n
+    better = sum(r["result"] > r["actual"] for r in results)
+    verdict = ("letting them run is ahead" if run > act else "selling at +40% is ahead") + \
+              (" (under 10 trades is mostly luck)" if n < 10 else "")
+    return (f"One-contract winners ({n}): sold at {act:+.0%} on average; letting them run would have made "
+            f"{run:+.0%} ({better} of {n} better): {verdict}")
+
+
+# ---------- market conditions and best/worst point, recorded with every trade ----------
+
+def trade_context(sig, now: datetime, df: pd.DataFrame, daily_closes, spy: pd.DataFrame | None) -> dict:
+    """Conditions at entry, stored with the trade so later reports can say WHEN the setups work.
+    Pure; any piece that can't be computed is left out."""
+    ctx = {"time": "open" if now.time() < time(10, 30) else "midday" if now.time() < time(13, 30) else "afternoon",
+           "weekday": now.strftime("%a")}
+    closes = [float(x) for x in list(daily_closes)[-15:]]
+    if df is not None and len(df):
+        o = float(df["open"].iloc[0])
+        if closes and closes[-1]:
+            ctx["gap"] = round(o / closes[-1] - 1, 4)
+        moves = [abs(b / a - 1) for a, b in zip(closes, closes[1:]) if a]
+        if moves and o:
+            rng = (float(df["high"].max()) - float(df["low"].min())) / o
+            ctx["range_vs_avg"] = round(rng / (sum(moves) / len(moves)), 2)
+    if spy is not None and len(spy):
+        so, sl = float(spy["open"].iloc[0]), float(spy["close"].iloc[-1])
+        if so:
+            ctx["spy_day"] = round(sl / so - 1, 4)
+            up = sl >= so
+            ctx["with_spy"] = (sig.direction == "call") == up
+        ctx["spy_above_vwap"] = sl > float(vwap(spy).iloc[-1])
+    return ctx
+
+
+def _ctx_buckets(ctx: dict) -> dict:
+    out = {"time of day": ctx.get("time")}
+    if "with_spy" in ctx:
+        out["SPY"] = "with SPY's move" if ctx["with_spy"] else "against SPY's move"
+    if "gap" in ctx:
+        out["gap"] = "gap over 1%" if abs(ctx["gap"]) > 0.01 else "gap under 1%"
+    if "range_vs_avg" in ctx:
+        out["volatility"] = "busy day" if ctx["range_vs_avg"] >= 1 else "quiet day"
+    return {k: v for k, v in out.items() if v}
+
+
+def context_report(trades: list, cost_per_contract: float = 0.0, min_trades: int = 10) -> list:
+    """Win rate and net result by market condition. Empty until min_trades trades carry context."""
+    import json as _json
+    rows = []
+    for t in trades:
+        try:
+            ctx = _json.loads(t.get("context") or "{}")
+        except (TypeError, ValueError):
+            ctx = {}
+        if ctx:
+            rows.append((_ctx_buckets(ctx), t["pnl"] - cost_per_contract * (t.get("qty") or 0)))
+    if len(rows) < min_trades:
+        return []
+    out = []
+    for dim in ("time of day", "SPY", "gap", "volatility"):
+        groups: dict = {}
+        for b, pnl in rows:
+            if dim in b:
+                groups.setdefault(b[dim], []).append(pnl)
+        if groups:
+            out.append(f"{dim}: " + "; ".join(f"{k} {len(v)} trades, win {sum(x > 0 for x in v) / len(v):.0%}, "
+                                               f"net ${sum(v):+,.0f}" for k, v in sorted(groups.items())))
+    return out
+
+
+def excursion_report(trades: list) -> str:
+    """Best and worst point during each trade (vs the entry price): are the stops too tight, and do
+    winners get given back?"""
+    rows = [t for t in trades if t.get("mfe") is not None and t.get("mae") is not None]
+    if len(rows) < 5:
+        return ""
+    wins = [t for t in rows if t["pnl"] > 0]
+    losses = [t for t in rows if t["pnl"] <= 0]
+    parts = []
+    if wins:
+        parts.append(f"winners dipped to {sum(t['mae'] for t in wins) / len(wins):+.0%} on average before working")
+    if losses:
+        gave = sum(t["mfe"] >= 0.20 for t in losses)
+        parts.append(f"{gave} of {len(losses)} losers were up +20% or more at some point")
+    return f"Best/worst points ({len(rows)} trades): " + "; ".join(parts)

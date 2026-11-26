@@ -1,4 +1,5 @@
 """Portfolio 1k: every rule in the plan, plus a full trade lifecycle against a fake Alpaca (no network)."""
+import json
 import types
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -285,7 +286,7 @@ def world(monkeypatch, isolated):
         fc.orders[oid] = types.SimpleNamespace(status="accepted", filled_qty=0, filled_avg_price=None)
         return oid
 
-    def sell(client, sym, qty, bid, ask=0.0, urgent=True):
+    def sell(client, sym, qty, bid, ask=0.0, urgent=True, steps=4):
         log["sells"].append((sym, qty))
         log.setdefault("urgent", []).append(urgent)
         n = min(qty, log.get("fill_limit", qty))
@@ -777,10 +778,10 @@ def test_shadow_filters_flag_without_changing_anything():
     daily = [100 * (1.02 if i % 2 else 0.98) for i in range(20)]        # ~4% typical daily moves
     put = R.Signal("NVDA", "orb", "put", 100.0)
     sh = R.shadow_filters(put, at("12:00"), flat, daily, spy_up)
-    assert sh == {"lunch": True, "strict_puts": True, "vol_gate": True, "news_veto": False}
+    assert sh == {"lunch": True, "strict_puts": True, "vol_gate": True, "news_veto": False, "macro_day": False}
     call = R.Signal("NVDA", "news", "call", 100.0)
     sh = R.shadow_filters(call, at("10:15"), bars([100, 103, 105]), [100, 100.5, 101] * 6, spy_up)
-    assert sh == {"lunch": False, "strict_puts": False, "vol_gate": False, "news_veto": True}
+    assert sh == {"lunch": False, "strict_puts": False, "vol_gate": False, "news_veto": True, "macro_day": False}
     assert R.shadow_filters(R.Signal("NVDA", "news", "call", 1, extra={"also": ["orb"]}), at("10:15"),
                             bars([100, 103]), [], None)["news_veto"] is False
 
@@ -879,3 +880,115 @@ def test_buy_and_sell_alerts_use_the_contract_label(world):
     r.tick()
     buys = [(t, m) for t, m in sent if t.startswith("BUY ")]
     assert buys and buys[0][0].isascii() and " @ $" in buys[0][1]
+
+
+# ---------- quiet strategy tests and small safety fixes (2026-11-25) ----------
+
+def test_quick_ladder_for_setup_failed_and_expiry_exits():
+    assert R.ladder_steps("stop") == 0 and R.ladder_steps("kill") == 0 and R.ladder_steps("manual") == 0
+    assert R.ladder_steps("setup_stop") == 2 and R.ladder_steps("expiry") == 2
+    assert R.ladder_steps("tp1") == 4 and R.ladder_steps("time") == 4
+    assert not R.exit_is_urgent("setup_stop")
+    assert len(R.sell_ladder("NVDA", 2.00, 2.20, 2)) <= 3
+
+
+def test_trading_days_skip_holidays():
+    assert R.add_trading_days(date(2026, 11, 25), 1) == date(2026, 11, 27)     # Thanksgiving skipped
+    assert R.add_trading_days(date(2026, 11, 25), 2) == date(2026, 11, 30)
+    assert R.add_trading_days(date(2026, 11, 25), 1, holidays=set()) == date(2026, 11, 26)
+
+
+def test_rebuilt_counts_include_partly_filled_buys():
+    orders = [{"client_order_id": "p1k-abc", "side": "buy", "status": "canceled", "qty": 1, "filled_at": "2026-11-25T15:00:00"},
+              {"client_order_id": "p1k-def", "side": "buy", "status": "canceled", "qty": 0, "filled_at": ""},
+              {"client_order_id": "p1k-ghi", "side": "buy", "status": "filled", "qty": 2, "filled_at": "2026-11-25T16:00:00"}]
+    assert R.bot_buys_since(orders, "2026-11-25T00:00:00") == 2
+
+
+def test_macro_day_shadow_filter():
+    sig = R.Signal("SPY", "orb", "call", 600.0)
+    df = bars([100, 101])
+    assert R.shadow_filters(sig, at("10:00", date(2026, 12, 4)), df, [], None)["macro_day"] is True   # jobs report
+    assert R.shadow_filters(sig, at("10:00", date(2026, 12, 10)), df, [], None)["macro_day"] is True  # CPI
+    assert R.shadow_filters(sig, at("10:00", date(2026, 12, 7)), df, [], None)["macro_day"] is False
+
+
+def test_runner_report_and_excursions_and_context():
+    p = {"symbol": "X", "root": "X", "direction": "call", "entry": 2.0, "expiry": "2026-11-27", "level": 99.0}
+    g = R.runner_ghost(p, 2.85, 2.80)
+    assert g["stop"] == 2.0 and g["tp1_done"] and g["qty0"] == 1 and g["actual"] == pytest.approx(0.40)
+    _, res = R.ghost_step(g, 3.70, at("10:30", date(2026, 11, 24)), 100.0, date(2026, 11, 25))
+    assert res == pytest.approx(0.85)                                           # +80% target hit
+    txt = R.runner_report([{"actual": 0.40, "result": 0.85}, {"actual": 0.42, "result": 0.0}])
+    assert "sold at +41%" in txt and "+42%" in txt and "1 of 2 better" in txt
+    trades = [{"pnl": 50, "mfe": 0.45, "mae": -0.10}, {"pnl": -60, "mfe": 0.25, "mae": -0.30},
+              {"pnl": -60, "mfe": 0.05, "mae": -0.30}, {"pnl": 80, "mfe": 0.60, "mae": -0.20},
+              {"pnl": -40, "mfe": 0.00, "mae": -0.25}]
+    ex = R.excursion_report(trades)
+    assert "winners dipped to -15%" in ex and "1 of 3 losers were up +20%" in ex
+    sig = R.Signal("NVDA", "orb", "call", 100.0)
+    ctx = R.trade_context(sig, at("09:55"), bars([102, 103]), [100.0] * 5 + [101.0], bars([500, 501]))
+    assert ctx["time"] == "open" and ctx["with_spy"] is True and ctx["gap"] == pytest.approx(102 / 101 - 1, abs=1e-4)
+    import json as _j
+    rows = [{"pnl": 10 if i % 2 else -10, "qty": 1, "context": _j.dumps(ctx)} for i in range(10)]
+    rep = R.context_report(rows)
+    assert rep[0].startswith("time of day: open 10 trades, win 50%")
+    assert R.context_report(rows[:9]) == []
+
+
+def test_one_contract_winner_is_followed_on_paper(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    monkeypatch.setattr(R, "contracts_for", lambda budget, ask: 1)
+    r = runner.Runner(fc)
+    r.tick()
+    assert log["buys"] == [("NVDA261120C00190000", 1)]
+    clock["now"] = at("10:20")
+    feed["bars"]["NVDA"] = bars([100, 100.3, 100.1, 100.2, 101.5, 102, 102.5, 103, 103.2])
+    feed["quote"] = (2.94, 2.98)
+    r.tick()
+    assert store.get("position") is None
+    t = store.closed_trades()[0]
+    assert t["kind"] == "tp1" and t["mfe"] == pytest.approx(2.96 / 2.04 - 1, abs=1e-3) and t["mae"] <= 0
+    assert t["context"] and "time" in json.loads(t["context"])
+    assert (store.get("runners") or [{}])[0].get("actual") == pytest.approx(2.94 / 2.04 - 1, abs=1e-3)
+    clock["now"] = at("10:40")
+    feed["quote"] = (3.78, 3.82)                                       # +86%: the paper runner hits +80%
+    r._ghost_t = 0
+    r.tick()
+    res = store.get("runner_results")
+    assert res and res[0]["result"] > res[0]["actual"] and not store.get("runners")
+
+
+def test_failed_phone_command_is_retried_and_garbage_is_skipped(world, monkeypatch):
+    fc, clock, feed, log, sent = world
+    import io, time as _t
+    monkeypatch.setattr(C, "CONTROL_TOPIC", "t")
+    monkeypatch.setattr(S, "CONTROL_PIN", "")
+    body = "not json\n" + json.dumps({"event": "message", "id": "c", "time": _t.time(), "message": "pause 1k"})
+    monkeypatch.setattr(runner.urllib.request, "urlopen", lambda url, timeout=10: io.BytesIO(body.encode()))
+    r = runner.Runner(fc)
+    calls = []
+    real = r.handle
+
+    def flaky(cmd):
+        calls.append(cmd)
+        if len(calls) == 1:
+            raise RuntimeError("Alpaca hiccup")
+        real(cmd)
+    r.handle = flaky
+    r.commands()
+    assert store.get("cmd_since") != "c" and not store.state().get("paused")
+    r.last_cmd = 0
+    r.commands()
+    assert store.state().get("paused") and store.get("cmd_since") == "c"
+
+
+def test_time_exit_still_happens_without_a_quote(world):
+    fc, clock, feed, log, sent = world
+    r = runner.Runner(fc)
+    r.tick()
+    assert store.get("position")
+    clock["now"] = at("15:50")
+    feed["quote"] = (0.0, 0.0)
+    r.tick()
+    assert log["sells"] and store.get("position") is None

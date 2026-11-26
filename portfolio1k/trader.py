@@ -192,15 +192,16 @@ def _market_sell(client, symbol: str, qty: int):
     return int(float(o.filled_qty or 0)), float(o.filled_avg_price or 0)
 
 
-def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bool = True) -> tuple[int, float]:
+def sell(client, symbol: str, qty: int, bid: float, ask: float = 0.0, urgent: bool = True,
+         steps: int = 4) -> tuple[int, float]:
     """Sell to close; returns (contracts actually sold, their average price). (0, 0) = nothing filled:
     the caller must treat the position as still open.
-    urgent (stops, kills, expiry): market order at once. Otherwise a patient limit ladder from the mid
-    down to the bid, about 5 s per step, then market for anything still unsold."""
+    urgent (stops, kills): market order at once. Otherwise a limit ladder from the mid down to the bid in
+    `steps` moves, about 5 s each, then market for anything still unsold."""
     if C.DRY_RUN:
         B.log.info("[1k] DRY RUN sell %d %s @ ~%.2f", qty, symbol, bid)
         return qty, bid
-    ladder = [] if urgent else R.sell_ladder((R.parse_occ(symbol) or {}).get("root", symbol), bid, ask)
+    ladder = [] if urgent or steps <= 0 else R.sell_ladder((R.parse_occ(symbol) or {}).get("root", symbol), bid, ask, steps)
     done, value = 0, 0.0
     if ladder:
         o = client.submit_order(LimitOrderRequest(symbol=symbol, qty=qty, side=OrderSide.SELL, limit_price=ladder[0],
